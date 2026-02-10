@@ -1,11 +1,16 @@
 """
-向量数据库路由
+向量数据库路由 - ChromaDB 的增删查接口（需登录）
+
+用于管理默认集合的文档，也可用于导入意图/改写规则（或直接调 /api/intent-rules/add 等）。
+- POST /api/vector/add：添加文档
+- POST /api/vector/query：相似度检索
+- DELETE /api/vector/delete：按 id 或条件删除
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from app.vector_db import vector_db
-from app.auth import get_current_active_user
+from core.vector_db import vector_db
+from core.auth import get_current_active_user
 from models.user import User
 
 router = APIRouter(prefix="/api/vector", tags=["向量数据库"])
@@ -36,7 +41,7 @@ def add_documents(
     document_data: DocumentAdd,
     current_user: User = Depends(get_current_active_user)
 ):
-    """添加文档到向量数据库"""
+    """添加文档到默认向量集合；不传 ids 时自动生成。"""
     try:
         result = vector_db.add_documents(
             documents=document_data.documents,
@@ -56,7 +61,7 @@ def query_documents(
     query_data: DocumentQuery,
     current_user: User = Depends(get_current_active_user)
 ):
-    """查询向量数据库"""
+    """按文本相似度检索，返回最相似的 n_results 条。"""
     try:
         results = vector_db.query(
             query_texts=query_data.query_texts,
@@ -76,7 +81,7 @@ def delete_documents(
     delete_data: DocumentDelete,
     current_user: User = Depends(get_current_active_user)
 ):
-    """从向量数据库删除文档"""
+    """按 ids 或 where 条件从默认集合删除文档。"""
     try:
         result = vector_db.delete(ids=delete_data.ids, where=delete_data.where)
         if result:

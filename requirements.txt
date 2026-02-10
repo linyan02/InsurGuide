@@ -32,6 +32,13 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-dotenv==1.0.0
 
+# 增强 RAG：Redis 上下文、RAGflow 调用
+redis==5.0.1
+
 # 其他工具
 httpx==0.25.2
 aiofiles==23.2.1
+
+# 测试
+pytest==7.4.3
+pytest-cov==4.1.0

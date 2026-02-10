@@ -1,0 +1,95 @@
+"""
+增强 RAG 多轮对话接口 - 产品文档核心接口
+
+- POST /api/chat：一轮问答，传 user_id、query，可选 intent_mode、rewrite_mode，返回 answer、sources、意图等。
+- POST /api/chat/clear：清除该用户的对话上下文（Redis），相当于「重新开始」。
+"""
+from typing import Optional
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from config import settings
+from core.database import get_db
+from core.redis_store import clear_conversation_context
+from services.rag.pipeline import run_chat_pipeline
+from services.rag.langchain_chain import run_chat_with_langchain
+
+router = APIRouter(prefix="/api", tags=["增强RAG对话"])
+
+
+class ChatRequest(BaseModel):
+    """多轮对话请求体。user_id 用于区分用户、取/存对话上下文；intent_mode/rewrite_mode 为空则用全局配置。"""
+    user_id: str
+    query: str
+    intent_mode: Optional[str] = None   # rule | llm | llm_vector | bert，空则用配置
+    rewrite_mode: Optional[str] = None  # rule | llm | llm_vector，空则用配置
+
+
+class ChatResponse(BaseModel):
+    """统一响应：code、message、data（内含 answer、source、intent 等）。"""
+    code: int
+    message: str
+    data: Optional[dict] = None
+
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(
+    body: ChatRequest = Body(..., description="用户唯一标识与提问"),
+    db: Session = Depends(get_db),
+):
+    """
+    多轮对话接口：接收 user_id、query，返回答案与溯源来源。
+    流程：获取上下文 → RAGflow 检索 → 答案生成与合规校验 → 保存上下文与日志 → 返回结果。
+    """
+    user_id = (body.user_id or "").strip()
+    query = (body.query or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id 不能为空")
+    if not query:
+        raise HTTPException(status_code=400, detail="query 不能为空")
+
+    if settings.USE_LANGCHAIN_RAG:
+        result = run_chat_with_langchain(
+            db, user_id, query,
+            intent_mode=body.intent_mode,
+            rewrite_mode=body.rewrite_mode,
+        )
+    else:
+        result = run_chat_pipeline(
+            db, user_id, query,
+            intent_mode=body.intent_mode,
+            rewrite_mode=body.rewrite_mode,
+        )
+    if "error" in result:
+        return ChatResponse(
+            code=500,
+            message=result["error"],
+            data=None,
+        )
+    return ChatResponse(
+        code=200,
+        message="success",
+        data={
+            "answer": result["answer"],
+            "context_count": result["context_count"],
+            "source": result.get("sources") or [],
+            "violated": result.get("violated", False),
+            "intent": result.get("intent", "other"),
+            "intent_cn": result.get("intent_cn", "其他"),
+            "intent_confidence": result.get("intent_confidence", 0),
+            "intent_method": result.get("intent_method", "rule"),
+            "rewritten_query": result.get("rewritten_query", body.query),
+            "rewrite_changed": result.get("rewrite_changed", False),
+            "rewrite_method": result.get("rewrite_method", "none"),
+            **({"intent_fallback_reason": result["intent_fallback_reason"]} if result.get("intent_fallback_reason") is not None else {}),
+        },
+    )
+
+
+@router.post("/chat/clear")
+def clear_context(user_id: str = Body(..., embed=True)):
+    """清除指定用户的对话上下文（Redis）"""
+    ok = clear_conversation_context(user_id)
+    return {"code": 200 if ok else 500, "message": "已清除上下文" if ok else "清除失败或 Redis 未就绪"}

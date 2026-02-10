@@ -1,11 +1,13 @@
 """
-Elasticsearch 路由
+Elasticsearch 路由 - 索引文档、搜索、建/删索引、健康检查（需登录）
+
+ES 为可选组件；未部署时这些接口会报错。主 RAG 流程不依赖 ES。
 """
 from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from app.es_client import get_es_client
-from app.auth import get_current_active_user
+from core.es_client import get_es_client
+from core.auth import get_current_active_user
 from models.user import User
 
 router = APIRouter(prefix="/api/es", tags=["Elasticsearch"])
@@ -81,12 +83,13 @@ def create_index(
     index_data: CreateIndex,
     current_user: User = Depends(get_current_active_user)
 ):
-    """创建索引"""
+    """创建 ES 索引（若已存在则不重复创建）。"""
     try:
+        es_client = get_es_client()
         result = es_client.create_index(
             index=index_data.index,
             mappings=index_data.mappings,
-            settings=index_data.settings
+            settings_index=index_data.settings
         )
         if result:
             return {"message": "索引创建成功"}
@@ -101,8 +104,9 @@ def delete_index(
     index_name: str,
     current_user: User = Depends(get_current_active_user)
 ):
-    """删除索引"""
+    """删除指定名称的索引，慎用。"""
     try:
+        es_client = get_es_client()
         result = es_client.delete_index(index=index_name)
         if result:
             return {"message": "索引删除成功"}
@@ -114,8 +118,9 @@ def delete_index(
 
 @router.get("/health")
 def get_es_health(current_user: User = Depends(get_current_active_user)):
-    """获取 Elasticsearch 健康状态"""
+    """获取 ES 集群健康状态。"""
     try:
+        es_client = get_es_client()
         health = es_client.get_health()
         if health:
             return {"health": health}

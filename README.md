@@ -1,6 +1,11 @@
 # InsurGuide - 智能保险指南系统
 
-基于 FastAPI、LangChain 和 Gradio 构建的智能保险指南平台，支持 Web 端登录、MySQL 数据库、向量数据库和 Elasticsearch 搜索。
+基于 FastAPI、LangChain 和 Gradio 构建的智能保险指南平台，支持 Web 端登录、MySQL 数据库、向量数据库和 Elasticsearch 搜索。并实现**智保灵犀增强 RAG 调用系统**（多轮对话、意图识别、问题改写、召回/融合/精排、合规校验、交互/合规日志）。
+
+> **架构说明**：[doc/架构说明.md](doc/架构说明.md)  
+> **项目说明**：[doc/项目说明.md](doc/项目说明.md)  
+> **中间件与安装**：[README_MIDDLEWARE.md](README_MIDDLEWARE.md)  
+> **详细技术实现**：[doc/详细技术实现方案.md](doc/详细技术实现方案.md)
 
 ## 📋 项目特性
 
@@ -90,55 +95,77 @@ Base.metadata.create_all(bind=engine)
 
 7. **启动应用**
 
-**启动 FastAPI 服务：**
+**启动 API 服务（供 PC Web / 小程序调用）：**
 
 ```bash
 python main.py
 ```
 
-或使用 uvicorn：
+或：
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-访问 API 文档：http://localhost:8000/docs
+- API 文档：http://localhost:8000/docs  
+- PC Web 单页：http://localhost:8000/static/index.html（需先启动 API）
 
-**启动 Gradio Web UI：**
+**启动 Gradio 演示 UI：**
 
 ```bash
 python gradio_app.py
 ```
 
-访问 Web UI：http://localhost:7860
+访问：http://localhost:7860
 
-## 📁 项目结构
+## 📁 项目结构（分层架构）
 
 ```
 InsurGuide/
-├── app/                    # 应用核心模块
-│   ├── __init__.py
-│   ├── database.py        # MySQL 数据库连接
-│   ├── vector_db.py       # 向量数据库连接
-│   ├── es_client.py       # Elasticsearch 客户端
-│   └── auth.py            # 认证模块
-├── models/                 # 数据模型
-│   ├── __init__.py
-│   └── user.py            # 用户模型
-├── routers/                # API 路由
-│   ├── __init__.py
-│   ├── auth.py            # 认证路由
-│   ├── vector.py          # 向量数据库路由
-│   └── es.py              # Elasticsearch 路由
-├── utils/                  # 工具函数
-│   └── __init__.py
-├── config.py              # 配置文件
-├── main.py                # FastAPI 主应用
-├── gradio_app.py          # Gradio Web UI
-├── requirements.txt       # Python 依赖
-├── .env.example           # 环境变量示例
-├── .gitignore            # Git 忽略文件
-└── README.md             # 项目文档
+├── doc/                    # 项目与架构文档
+│   ├── 架构说明.md
+│   ├── 项目说明.md
+│   ├── 详细技术实现方案.md
+│   └── 智保灵犀增强RAG调用系统产品技术方案.pdf
+├── config/                 # 配置层
+│   ├── settings.py        # 统一配置（.env）
+│   └── constants.py       # 常量
+├── core/                   # 核心基础设施层
+│   ├── database.py        # MySQL
+│   ├── redis_store.py     # 对话上下文
+│   ├── vector_db.py       # ChromaDB
+│   ├── es_client.py       # Elasticsearch
+│   └── auth.py            # JWT 认证
+├── services/               # 增强 RAG 服务层
+│   └── rag/               # 意图→改写→召回→融合→精排→流水线
+│       ├── recall.py      # 召回层
+│       ├── fusion.py      # 融合层
+│       ├── rerank.py      # 精排层
+│       ├── pipeline.py    # 流水线编排
+│       └── _ragflow.py    # RAGflow 调用
+├── api/                    # API 接口服务层（供 Web/小程序）
+│   └── main.py            # FastAPI 应用入口
+├── web/                    # PC Web 前端模块
+│   ├── static/            # 静态资源（如 index.html）
+│   └── README.md
+├── routers/                # API 路由（认证/对话/向量/ES/规则）
+├── app/                    # 业务实现（意图/改写/答案/合规等，兼容层）
+├── models/                 # ORM 模型
+├── tests/                  # 测试模块
+│   ├── conftest.py        # pytest fixture（TestClient、测试 DB）
+│   ├── test_api_health.py # 健康/根路径
+│   ├── test_api_auth.py   # 认证 API
+│   ├── test_api_chat.py   # 对话 API
+│   ├── test_services_rag.py # 融合/精排单元测试
+│   ├── test_app_compliance.py # 合规单元测试
+│   └── test_config.py     # 配置与常量
+├── utils/
+├── config.py              # 配置入口（兼容）
+├── main.py                # 统一启动入口（启动 api.main:app）
+├── gradio_app.py          # Gradio 演示 UI
+├── requirements.txt
+├── .env.example
+└── README.md
 ```
 
 ## 🔧 配置说明
@@ -179,6 +206,11 @@ curl http://localhost:9200
 - `POST /api/vector/add` - 添加文档到向量数据库
 - `POST /api/vector/query` - 查询向量数据库
 - `DELETE /api/vector/delete` - 删除向量数据库中的文档
+
+#### 增强 RAG 对话（智保灵犀）
+
+- `POST /api/chat` - 多轮对话（Body: `user_id`, `query`，返回答案与溯源来源）
+- `POST /api/chat/clear` - 清除指定用户的对话上下文
 
 #### Elasticsearch 相关
 
@@ -268,6 +300,18 @@ curl -X POST "http://localhost:8000/api/es/search" \
    - Token 有过期时间，默认 30 分钟
 
 ## 🛠️ 开发
+
+### 运行测试
+
+```bash
+# 安装依赖后执行
+pytest tests/ -v
+
+# 带覆盖率
+pytest tests/ -v --cov=config --cov=core --cov=services --cov=app --cov-report=term-missing
+```
+
+测试模块说明见 [tests/README.md](tests/README.md)。
 
 ### 运行开发服务器
 
