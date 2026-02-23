@@ -1,107 +1,481 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>智保灵犀 - InsurGuide</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 20px; background: #f5f7fa; }
-    .container { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 24px; }
-    h1 { margin: 0 0 8px; color: #1a1a2e; font-size: 1.5rem; }
-    .sub { color: #666; font-size: 0.9rem; margin-bottom: 20px; }
-    .row { margin-bottom: 12px; }
-    label { display: block; margin-bottom: 4px; color: #333; font-weight: 500; }
-    input, textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-    textarea { min-height: 80px; resize: vertical; }
-    button { padding: 10px 20px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-    button:hover { background: #1d4ed8; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
-    .meta { margin-top: 12px; padding: 12px; background: #f8fafc; border-radius: 8px; font-size: 13px; color: #475569; white-space: pre-wrap; }
-    .answer { margin-top: 12px; padding: 12px; background: #ecfdf5; border-radius: 8px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
-    .error { color: #dc2626; }
-    #apiBase { font-family: monospace; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智保灵犀 Agent - InsurGuide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --gemini-blue: #1a73e8; --dark-bg: #131314; --dark-card: #1e1f20; }
+        .dark-mode { background-color: var(--dark-bg) !important; color: #e3e3e3; }
+        .dark-mode aside { background-color: var(--dark-card); border-color: #333; }
+        .dark-mode main { background-color: var(--dark-bg) !important; }
+        .dark-mode #chat-content { background-color: var(--dark-bg) !important; }
+        .dark-mode .bg-white { background-color: var(--dark-card) !important; color: #e3e3e3; }
+        .dark-mode .bg-gray-100 { background-color: #282a2d !important; }
+        .dark-mode .bg-gray-50 { background-color: var(--dark-bg) !important; }
+        .dark-mode border { border-color: #444746; }
+        .dark-mode .text-gray-500 { color: #9ca3af; }
+        .dark-mode .text-gray-800 { color: #e3e3e3; }
+        .dark-mode .hover\:bg-gray-100:hover { background-color: #282a2d; }
+        .dark-mode .focus-within\:bg-white:focus-within { background-color: var(--dark-card) !important; }
+        .dark-mode .focus-within\:border-blue-400:focus-within { border-color: #60a5fa; }
+        .dark-mode input, .dark-mode textarea { background-color: transparent; color: #e3e3e3; }
+        .animate-slide-up { animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .chat-content { scroll-behavior: smooth; }
+    </style>
 </head>
-<body>
-  <div class="container">
-    <h1>智保灵犀 · 增强 RAG 对话</h1>
-    <p class="sub">InsurGuide PC Web - 多轮对话、意图识别、问题改写、知识库检索</p>
-    <div class="row">
-      <label for="apiBase">API 地址</label>
-      <input type="text" id="apiBase" value="http://localhost:8000" placeholder="http://localhost:8000" />
+<body class="bg-gray-50 transition-colors duration-300 font-sans">
+    <!-- 认证页：登录 / 注册 -->
+    <div id="auth-page" class="flex items-center justify-center min-h-screen relative z-50 bg-inherit">
+        <div class="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 text-center dark:bg-[var(--dark-card)] dark:border-gray-600">
+            <h2 class="text-3xl font-bold text-blue-600 mb-2">智保灵犀</h2>
+            <p class="text-gray-500 dark:text-gray-400 mb-6">开启您的 AI 保险专家之旅</p>
+            <div id="auth-tabs" class="flex gap-4 justify-center mb-6">
+                <button type="button" id="tab-login" class="px-4 py-2 rounded-xl font-medium bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">登录</button>
+                <button type="button" id="tab-register" class="px-4 py-2 rounded-xl font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">注册</button>
+            </div>
+            <!-- 登录表单 -->
+            <form id="form-login" class="space-y-4">
+                <input type="text" id="login-username" placeholder="用户名" required class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-gray-800 dark:border-gray-600 dark:placeholder-gray-400" />
+                <input type="password" id="login-password" placeholder="密码" required class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-gray-800 dark:border-gray-600" />
+                <button type="submit" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">登录</button>
+            </form>
+            <!-- 注册表单 -->
+            <form id="form-register" class="space-y-4 hidden">
+                <input type="text" id="reg-username" placeholder="用户名" required class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-gray-800 dark:border-gray-600" />
+                <input type="email" id="reg-email" placeholder="电子邮箱" required class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-gray-800 dark:border-gray-600" />
+                <input type="password" id="reg-password" placeholder="设置密码" required class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:bg-gray-800 dark:border-gray-600" />
+                <button type="submit" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">注册</button>
+            </form>
+            <p id="auth-msg" class="mt-4 text-sm text-red-500 min-h-5"></p>
+            <p class="mt-6 text-sm text-gray-400">使用即表示同意服务协议</p>
+        </div>
     </div>
-    <div class="row">
-      <label for="userId">用户 ID</label>
-      <input type="text" id="userId" placeholder="用于多轮上下文的唯一标识" />
-    </div>
-    <div class="row">
-      <label for="query">提问</label>
-      <textarea id="query" placeholder="例如：重疾险甲状腺结节核保规则"></textarea>
-    </div>
-    <div class="row">
-      <button type="button" id="send">发送</button>
-    </div>
-    <div id="meta" class="meta" style="display:none;"></div>
-    <div id="answer" class="answer" style="display:none;"></div>
-    <div id="err" class="error" style="display:none;"></div>
-  </div>
-  <script>
-    (function () {
-      var apiBase = document.getElementById("apiBase");
-      var userId = document.getElementById("userId");
-      var query = document.getElementById("query");
-      var send = document.getElementById("send");
-      var metaEl = document.getElementById("meta");
-      var answerEl = document.getElementById("answer");
-      var errEl = document.getElementById("err");
 
-      function showErr(msg) {
-        errEl.textContent = msg;
-        errEl.style.display = "block";
-        answerEl.style.display = "none";
-        metaEl.style.display = "none";
-      }
-      function showAnswer(meta, answer) {
-        errEl.style.display = "none";
-        metaEl.textContent = meta;
-        metaEl.style.display = "block";
-        answerEl.textContent = answer;
-        answerEl.style.display = "block";
-      }
+    <!-- 主应用 -->
+    <div id="main-app" class="hidden flex h-screen overflow-hidden">
+        <aside class="w-64 border-r border-gray-200 flex flex-col bg-white transition-all dark:bg-[var(--dark-card)] dark:border-gray-700">
+            <div class="p-4">
+                <button type="button" id="btn-new-chat" class="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-600 rounded-2xl font-semibold hover:bg-blue-100 dark:bg-blue-900/40 dark:hover:bg-blue-900/60">+ 新对话</button>
+            </div>
+            <div class="flex-1 px-4 space-y-2 overflow-y-auto no-scrollbar">
+                <p class="text-[11px] font-bold text-gray-400 uppercase mt-4 mb-2 px-2">最近记录</p>
+                <div id="history-list" class="space-y-1">
+                    <div class="p-3 text-sm text-gray-500 dark:text-gray-400">暂无记录</div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                <button type="button" id="btn-theme" class="w-full text-left p-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl text-sm flex items-center gap-3">
+                    <span id="t-icon">🌙</span> <span id="t-text">黑夜模式</span>
+                </button>
+                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl dark:bg-gray-800">
+                    <div id="user-avatar" class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold shrink-0">U</div>
+                    <div class="text-xs truncate font-medium dark:text-gray-300" id="user-display">-</div>
+                    <button type="button" id="btn-logout" class="ml-auto text-gray-400 hover:text-red-500 text-xs">退出</button>
+                </div>
+            </div>
+        </aside>
 
-      send.addEventListener("click", function () {
-        var base = (apiBase.value || "").trim().replace(/\/$/, "");
-        var uid = (userId.value || "").trim();
-        var q = (query.value || "").trim();
-        if (!base) { showErr("请填写 API 地址"); return; }
-        if (!uid) { showErr("请填写用户 ID"); return; }
-        if (!q) { showErr("请填写提问内容"); return; }
-        send.disabled = true;
-        errEl.style.display = "none";
-        fetch(base + "/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: uid, query: q }),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            send.disabled = false;
-            if (data.code !== 200) {
-              showErr(data.message || data.detail || "请求失败");
-              return;
+        <main class="flex-1 flex flex-col relative min-w-0">
+            <header class="p-4 flex items-center shrink-0 border-b border-gray-200 dark:border-gray-700">
+                <select id="model-select" class="bg-transparent font-bold text-xl outline-none cursor-pointer border-none hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-1">
+                    <option value="pro">智保灵犀 - 专业版</option>
+                    <option value="standard">智保灵犀 - 标准版</option>
+                </select>
+            </header>
+
+            <div id="chat-content" class="flex-1 overflow-y-auto p-6 space-y-8 flex flex-col items-center no-scrollbar chat-content">
+                <div id="welcome-ui" class="text-center mt-32 animate-slide-up">
+                    <h1 class="text-5xl font-bold mb-6 bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 bg-clip-text text-transparent">您好，我是智保灵犀</h1>
+                    <p class="text-gray-500 dark:text-gray-400 text-lg">上传保险单据，为您提供精准的条款解析与保障建议</p>
+                </div>
+            </div>
+
+            <div class="p-6 max-w-4xl mx-auto w-full shrink-0">
+                <div id="input-area" class="bg-gray-100 dark:bg-gray-800 rounded-[32px] p-4 transition-all border-2 border-transparent focus-within:bg-white focus-within:border-blue-400 focus-within:shadow-xl dark:focus-within:bg-gray-800">
+                    <div id="file-preview-box" class="hidden flex items-center gap-2 bg-white dark:bg-gray-700 w-max px-3 py-2 rounded-2xl mb-3 shadow-sm border border-blue-100 dark:border-gray-600 animate-slide-up">
+                        <span class="text-blue-500 font-bold">DOC</span>
+                        <span id="fn" class="text-xs font-medium text-gray-600 dark:text-gray-300"></span>
+                        <button type="button" id="btn-cancel-file" class="text-gray-400 hover:text-red-500 font-bold ml-1">×</button>
+                    </div>
+                    <textarea id="main-input" rows="1" placeholder="在此输入保险咨询问题..." class="w-full bg-transparent outline-none resize-none px-2 text-lg dark:placeholder-gray-400"></textarea>
+                    <div class="flex justify-between items-center mt-4">
+                        <div class="flex gap-2">
+                            <input type="file" id="f-upload" class="hidden" accept=".pdf,.doc,.docx,.txt" />
+                            <button type="button" id="btn-upload" class="p-3 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition text-xl" title="上传附件">📎</button>
+                        </div>
+                        <button type="button" id="btn-send" class="bg-blue-600 text-white px-8 py-2.5 rounded-full font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100 dark:shadow-none">发送</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        (function () {
+            const API_BASE = (function () {
+                var o = window.location.origin || '';
+                if (!o || o === 'null' || o === 'file://') return 'http://localhost:8000';
+                return o.replace(/\/$/, '');
+            })();
+
+            const TOKEN_KEY = 'insurguide_token';
+            const THEME_KEY = 'insurguide_theme';
+
+            let currentUser = null;
+
+            function getToken() { return localStorage.getItem(TOKEN_KEY); }
+            function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
+
+            function showAuthPage() {
+                document.getElementById('auth-page').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
             }
-            var d = data.data || {};
-            var meta = "意图：" + (d.intent_cn || "") + "\n来源：" + (d.source && d.source.length ? d.source.join("、") : "无");
-            if (d.rewrite_changed && d.rewritten_query) meta += "\n检索用改写：" + d.rewritten_query;
-            showAnswer(meta, d.answer || "");
-          })
-          .catch(function (e) {
-            send.disabled = false;
-            showErr("请求错误: " + (e.message || String(e)));
-          });
-      });
-    })();
-  </script>
+            function showMainApp() {
+                document.getElementById('auth-page').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+            }
+            function setAuthMsg(msg, isError) {
+                const el = document.getElementById('auth-msg');
+                el.textContent = msg || '';
+                el.className = 'mt-4 text-sm min-h-5 ' + (isError ? 'text-red-500' : 'text-green-600');
+            }
+
+            // 主题
+            function applyTheme(isDark) {
+                if (isDark) document.body.classList.add('dark-mode');
+                else document.body.classList.remove('dark-mode');
+                document.getElementById('t-text').textContent = isDark ? '白天模式' : '黑夜模式';
+                document.getElementById('t-icon').textContent = isDark ? '☀️' : '🌙';
+            }
+            function toggleTheme() {
+                const isDark = document.body.classList.toggle('dark-mode');
+                localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
+                document.getElementById('t-text').textContent = isDark ? '白天模式' : '黑夜模式';
+                document.getElementById('t-icon').textContent = isDark ? '☀️' : '🌙';
+            }
+            if (localStorage.getItem(THEME_KEY) === 'dark') applyTheme(true);
+
+            document.getElementById('btn-theme').addEventListener('click', toggleTheme);
+
+            // 认证 Tab
+            document.getElementById('tab-login').addEventListener('click', function () {
+                document.getElementById('form-login').classList.remove('hidden');
+                document.getElementById('form-register').classList.add('hidden');
+                document.getElementById('tab-login').classList.add('bg-blue-100', 'text-blue-600');
+                document.getElementById('tab-login').classList.remove('text-gray-500');
+                document.getElementById('tab-register').classList.remove('bg-blue-100', 'text-blue-600');
+                document.getElementById('tab-register').classList.add('text-gray-500');
+                setAuthMsg('');
+            });
+            document.getElementById('tab-register').addEventListener('click', function () {
+                document.getElementById('form-register').classList.remove('hidden');
+                document.getElementById('form-login').classList.add('hidden');
+                document.getElementById('tab-register').classList.add('bg-blue-100', 'text-blue-600');
+                document.getElementById('tab-register').classList.remove('text-gray-500');
+                document.getElementById('tab-login').classList.remove('bg-blue-100', 'text-blue-600');
+                document.getElementById('tab-login').classList.add('text-gray-500');
+                setAuthMsg('');
+            });
+
+            // 登录
+            document.getElementById('form-login').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const username = document.getElementById('login-username').value.trim();
+                const password = document.getElementById('login-password').value;
+                if (!username || !password) { setAuthMsg('请填写用户名和密码', true); return; }
+                setAuthMsg('登录中…');
+                try {
+                    const form = new FormData();
+                    form.append('username', username);
+                    form.append('password', password);
+                    const r = await fetch(API_BASE + '/api/auth/login', {
+                        method: 'POST',
+                        body: form,
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    const data = await r.json();
+                    if (r.status !== 200) {
+                        setAuthMsg(data.detail || data.message || '登录失败', true);
+                        return;
+                    }
+                    setToken(data.access_token);
+                    setAuthMsg('登录成功', false);
+                    await loadMeAndEnter();
+                } catch (err) {
+                    setAuthMsg('请求错误: ' + (err.message || String(err)), true);
+                }
+            });
+
+            // 注册
+            document.getElementById('form-register').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const username = document.getElementById('reg-username').value.trim();
+                const email = document.getElementById('reg-email').value.trim();
+                const password = document.getElementById('reg-password').value;
+                if (!username || !email || !password) { setAuthMsg('请填写完整信息', true); return; }
+                setAuthMsg('注册中…');
+                try {
+                    const r = await fetch(API_BASE + '/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, email, password })
+                    });
+                    const data = await r.json();
+                    if (r.status === 201) {
+                        setAuthMsg('注册成功，请登录', false);
+                        document.getElementById('tab-login').click();
+                        document.getElementById('login-username').value = username;
+                        return;
+                    }
+                    var detail = data.detail;
+                    var msg = typeof detail === 'string' ? detail : (Array.isArray(detail) && detail[0] && detail[0].msg) ? detail[0].msg : data.message || '注册失败';
+                    setAuthMsg(msg, true);
+                } catch (err) {
+                    setAuthMsg('请求错误: ' + (err.message || String(err)), true);
+                }
+            });
+
+            async function loadMeAndEnter() {
+                const token = getToken();
+                if (!token) { showAuthPage(); return; }
+                try {
+                    const r = await fetch(API_BASE + '/api/auth/me', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (r.status !== 200) {
+                        setToken(null);
+                        showAuthPage();
+                        return;
+                    }
+                    currentUser = await r.json();
+                    document.getElementById('user-display').textContent = currentUser.email || currentUser.username || '-';
+                    document.getElementById('user-avatar').textContent = (currentUser.username || 'U').charAt(0).toUpperCase();
+                    showMainApp();
+                    clearChatUI();
+                    loadHistory();
+                } catch (_) {
+                    setToken(null);
+                    showAuthPage();
+                }
+            }
+
+            document.getElementById('btn-logout').addEventListener('click', function () {
+                setToken(null);
+                currentUser = null;
+                showAuthPage();
+            });
+
+            // 新对话
+            document.getElementById('btn-new-chat').addEventListener('click', async function () {
+                if (!currentUser) return;
+                try {
+                    await fetch(API_BASE + '/api/chat/clear', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: currentUser.username })
+                    });
+                } catch (_) {}
+                clearChatUI();
+            });
+
+            function clearChatUI() {
+                const box = document.getElementById('chat-content');
+                const welcome = document.getElementById('welcome-ui');
+                welcome.classList.remove('hidden');
+                const others = box.querySelectorAll('.chat-msg');
+                others.forEach(function (el) { el.remove(); });
+            }
+
+            // 最近记录：拉取并渲染最近 5 条对话标题
+            async function loadHistory() {
+                const listEl = document.getElementById('history-list');
+                if (!listEl) return;
+                const token = getToken();
+                if (!token) {
+                    listEl.innerHTML = '<div class="p-3 text-sm text-gray-500 dark:text-gray-400">暂无记录</div>';
+                    return;
+                }
+                try {
+                    const r = await fetch(API_BASE + '/api/chat/history?limit=5', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    const res = await r.json();
+                    if (r.status !== 200 || res.code !== 200 || !Array.isArray(res.data)) {
+                        listEl.innerHTML = '<div class="p-3 text-sm text-gray-500 dark:text-gray-400">暂无记录</div>';
+                        return;
+                    }
+                    if (res.data.length === 0) {
+                        listEl.innerHTML = '<div class="p-3 text-sm text-gray-500 dark:text-gray-400">暂无记录</div>';
+                        return;
+                    }
+                    listEl.innerHTML = res.data.map(function (item) {
+                        return '<div class="history-item p-3 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl cursor-pointer truncate" data-log-id="' + escapeHtml(String(item.id)) + '" title="' + escapeHtml(item.title || '') + '">' + escapeHtml(item.title || '（无标题）') + '</div>';
+                    }).join('');
+                } catch (_) {
+                    listEl.innerHTML = '<div class="p-3 text-sm text-gray-500 dark:text-gray-400">暂无记录</div>';
+                }
+            }
+
+            // 点击最近记录：拉取该条问+答并展示，同时恢复上下文以便继续对话
+            document.getElementById('history-list').addEventListener('click', async function (e) {
+                var el = e.target;
+                while (el && el !== this) {
+                    if (el.classList && el.classList.contains('history-item')) {
+                        var logId = el.getAttribute('data-log-id');
+                        if (!logId || !currentUser) return;
+                        var token = getToken();
+                        if (!token) return;
+                        try {
+                            var r = await fetch(API_BASE + '/api/chat/history/' + logId, {
+                                headers: { 'Authorization': 'Bearer ' + token }
+                            });
+                            if (r.status !== 200) return;
+                            var res = await r.json();
+                            if (res.code !== 200 || !res.data) return;
+                            var d = res.data;
+                            clearChatUI();
+                            document.getElementById('welcome-ui').classList.add('hidden');
+                            var box = document.getElementById('chat-content');
+                            var userHtml = '<div class="w-full max-w-3xl flex flex-col items-end animate-slide-up chat-msg">' +
+                                '<div class="bg-blue-600 text-white p-5 rounded-3xl rounded-tr-none shadow-md">' + nl2br(d.query || '') + '</div></div>';
+                            var aiHtml = '<div class="w-full max-w-3xl flex gap-4 animate-slide-up chat-msg">' +
+                                '<div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold shadow-sm shrink-0">灵</div>' +
+                                '<div class="bg-white dark:bg-gray-800 border dark:border-gray-600 p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 dark:text-gray-200 leading-relaxed">' + nl2br(d.answer || '') + '</div></div>';
+                            box.insertAdjacentHTML('beforeend', userHtml + aiHtml);
+                            scrollToBottom();
+                            await fetch(API_BASE + '/api/chat/context/restore', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                                body: JSON.stringify({ log_id: parseInt(logId, 10) })
+                            });
+                        } catch (_) {}
+                        return;
+                    }
+                    el = el.parentElement;
+                }
+            });
+
+            // 文件
+            document.getElementById('btn-upload').addEventListener('click', function () { document.getElementById('f-upload').click(); });
+            document.getElementById('f-upload').addEventListener('change', function () {
+                if (this.files.length > 0) {
+                    document.getElementById('fn').textContent = this.files[0].name;
+                    document.getElementById('file-preview-box').classList.remove('hidden');
+                }
+            });
+            document.getElementById('btn-cancel-file').addEventListener('click', function () {
+                document.getElementById('f-upload').value = '';
+                document.getElementById('file-preview-box').classList.add('hidden');
+            });
+
+            function cancelFile() {
+                document.getElementById('f-upload').value = '';
+                document.getElementById('file-preview-box').classList.add('hidden');
+            }
+
+            // 发送 & 对话
+            function scrollToBottom() {
+                const box = document.getElementById('chat-content');
+                box.scrollTop = box.scrollHeight;
+            }
+
+            function escapeHtml(s) {
+                const div = document.createElement('div');
+                div.textContent = s;
+                return div.innerHTML;
+            }
+
+            function nl2br(s) {
+                return escapeHtml(s || '').replace(/\n/g, '<br>');
+            }
+
+            document.getElementById('btn-send').addEventListener('click', handleSend);
+            document.getElementById('main-input').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+            });
+
+            async function handleSend() {
+                const input = document.getElementById('main-input');
+                const box = document.getElementById('chat-content');
+                const fileBox = document.getElementById('file-preview-box');
+                const text = (input.value || '').trim();
+                const hasFile = !fileBox.classList.contains('hidden');
+                if (!text && !hasFile) return;
+                if (!currentUser) return;
+
+                document.getElementById('welcome-ui').classList.add('hidden');
+
+                const fileName = hasFile ? document.getElementById('fn').textContent : '';
+                const userHtml = '<div class="w-full max-w-3xl flex flex-col items-end animate-slide-up chat-msg">' +
+                    '<div class="bg-blue-600 text-white p-5 rounded-3xl rounded-tr-none shadow-md">' +
+                    (hasFile ? '<div class="text-[10px] bg-blue-700 p-2 rounded-lg mb-2">已上传文件：' + escapeHtml(fileName) + '</div>' : '') +
+                    nl2br(text || '（仅上传文件）') +
+                    '</div></div>';
+                box.insertAdjacentHTML('beforeend', userHtml);
+                const queryToSend = text || '请根据我上传的文件做条款解析与保障建议';
+                input.value = '';
+                cancelFile();
+                scrollToBottom();
+
+                const placeholderId = 'ai-msg-' + Date.now();
+                const placeholderHtml = '<div id="' + placeholderId + '" class="w-full max-w-3xl flex gap-4 animate-slide-up chat-msg">' +
+                    '<div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold shadow-sm shrink-0">灵</div>' +
+                    '<div class="bg-white dark:bg-gray-800 border dark:border-gray-600 p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 dark:text-gray-200 leading-relaxed">思考中…</div></div>';
+                box.insertAdjacentHTML('beforeend', placeholderHtml);
+                scrollToBottom();
+
+                try {
+                    var modelPlan = (document.getElementById('model-select').value || 'standard').trim();
+                    const r = await fetch(API_BASE + '/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: currentUser.username, query: queryToSend, model_plan: modelPlan })
+                    });
+                    const data = await r.json();
+                    const container = document.getElementById(placeholderId);
+                    if (!container) return;
+                    const contentDiv = container.querySelector('div:last-child');
+                    if (data.code === 200 && data.data) {
+                        const d = data.data;
+                        let html = nl2br(d.answer || '');
+                        if (d.source && d.source.length) {
+                            html += '<div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600 text-xs text-gray-500 dark:text-gray-400">来源：' + escapeHtml(d.source.join('、')) + '</div>';
+                        }
+                        if (d.intent_cn) {
+                            html += '<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">意图：' + escapeHtml(d.intent_cn) + '</div>';
+                        }
+                        contentDiv.innerHTML = html;
+                        loadHistory();
+                    } else {
+                        contentDiv.innerHTML = '回复失败：' + escapeHtml(data.message || data.detail || '未知错误');
+                        contentDiv.classList.add('text-red-500');
+                    }
+                } catch (err) {
+                    const container = document.getElementById(placeholderId);
+                    if (container) {
+                        const contentDiv = container.querySelector('div:last-child');
+                        contentDiv.innerHTML = '请求错误：' + escapeHtml(err.message || String(err));
+                        contentDiv.classList.add('text-red-500');
+                    }
+                }
+                scrollToBottom();
+            }
+
+            // textarea 自动增高
+            document.getElementById('main-input').addEventListener('input', function () {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+            });
+
+            // 初始化
+            if (getToken()) loadMeAndEnter();
+            else showAuthPage();
+        })();
+    </script>
 </body>
 </html>

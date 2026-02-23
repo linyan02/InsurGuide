@@ -28,32 +28,33 @@ class Settings(BaseSettings):
 
     # ---------- MySQL 数据库 ----------
     # 用于存用户信息、交互日志、合规日志等
-    MYSQL_HOST: str = "localhost"
+    MYSQL_HOST: str = "121.41.189.203"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "root"
-    MYSQL_PASSWORD: str = "password"
+    MYSQL_PASSWORD: str = "ZhiBao123**"
     MYSQL_DATABASE: str = "insurguide"
 
     # ---------- Redis（多轮对话上下文） ----------
     # 用 Redis 存每个用户最近几轮「问-答」，这样下一轮回答时能结合上文
-    REDIS_HOST: str = "localhost"
+    REDIS_HOST: str = "121.41.189.203"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0                   # Redis 有多个逻辑库，0 是默认
-    REDIS_PASSWORD: Optional[str] = None
+    REDIS_PASSWORD: Optional[str] = "ZhiBao123**"
     REDIS_CONTEXT_TTL_MINUTES: int = 30  # 上下文过期时间，超时后要重新开始对话
     REDIS_MAX_HISTORY_TURNS: int = 10   # 最多保留多少轮对话，防止占用太多内存
 
     # ---------- RAGflow 知识库 ----------
     # RAGflow 是独立部署的知识库服务，本系统通过 HTTP 调它的接口做检索
-    RAGFLOW_API_URL: str = "http://localhost:9380/v1/search"  # 检索接口地址
-    RAGFLOW_API_KEY: Optional[str] = None   # 调用密钥，在 RAGflow 后台生成
-    RAGFLOW_KNOWLEDGE_BASE_ID: Optional[str] = None  # 要查的是哪个知识库
+    # 可为 base（如 http://host:9380/api/v1），代码会自动追加 /retrieval
+    RAGFLOW_API_URL: str = "http://47.118.30.223:9380/api/v1"
+    RAGFLOW_API_KEY: Optional[str] = "ragflow-dDrIbMcOZLzb9TlZ7WTRdkZlq-Ue_kKWI-pCPdtHKOw"   # 调用密钥，在 RAGflow 后台生成
+    RAGFLOW_KNOWLEDGE_BASE_ID: Optional[str] = "7f6af9a5080c11f1a760fe457711635e"  # 要查的是哪个知识库
     RAGFLOW_TOP_K: int = 3              # 每次检索最多返回几条片段
     RAGFLOW_TIMEOUT: int = 10           # 请求超时秒数
 
     # ---------- 大模型与合规 ----------
     LLM_MODE: str = "api"               # api=用云端接口，local=用本机模型
-    DASHSCOPE_API_KEY: Optional[str] = None   # 通义千问的 Key，用于生成答案/意图/改写
+    DASHSCOPE_API_KEY: Optional[str] = "sk-c164f51d9b0b4efb9f1ee529ee578ee4"   # 通义千问的 Key，用于生成答案/意图/改写
     OPENAI_API_KEY: Optional[str] = None
     VIOLATION_WORDS: str = "保证赔付,100%理赔,无风险,稳赚,必赔"  # 答案里出现这些词会被替换成「已屏蔽」
 

@@ -29,13 +29,16 @@ def call_ragflow(
     if not api_key and "/api/v1/" in base_url:
         return {"error": "RAGflow API Key 未配置（RAGFLOW_API_KEY）"}
 
-    # 请求体：query、knowledge_base_id、top_k；鉴权可用 body 的 api_key 或 Header Bearer
+    # RAGflow 官方检索接口为 POST /api/v1/retrieval，若配置的是 base（如 /api/v1）则自动追加
+    request_url = base_url if base_url.rstrip("/").endswith("retrieval") else (base_url + "/retrieval")
+
+    # 请求体：RAGflow 官方约定为 question、dataset_ids（数组）、top_k
     payload: Dict[str, Any] = {
-        "query": query,
+        "question": query,
         "top_k": k,
     }
     if kb_id:
-        payload["knowledge_base_id"] = kb_id
+        payload["dataset_ids"] = [kb_id] if isinstance(kb_id, str) else list(kb_id)
     if api_key and _ragflow_uses_api_key_in_body(base_url):
         payload["api_key"] = api_key
 
@@ -45,7 +48,7 @@ def call_ragflow(
 
     try:
         with httpx.Client(timeout=t) as client:
-            resp = client.post(base_url, json=payload, headers=headers)
+            resp = client.post(request_url, json=payload, headers=headers)
     except Exception as e:
         return {"error": f"RAGflow 调用异常：{str(e)}"}
 
@@ -57,11 +60,23 @@ def call_ragflow(
     except Exception:
         return {"error": "RAGflow 返回非 JSON"}
 
+    if data.get("code") is not None and data.get("code") != 0:
+        return {"error": data.get("message", "RAGflow 返回错误")}
+
     # 兼容多种返回结构
     if "error" in data:
         return {"error": data["error"]}
     if "data" in data:
         inner = data["data"]
+        if isinstance(inner, dict) and "chunks" in inner:
+            # RAGflow 官方 retrieval：data.chunks[]，每项含 content、document_keyword 等
+            chunks = inner["chunks"] or []
+            documents = [c.get("content", "") for c in chunks if isinstance(c, dict)]
+            metadatas = [
+                {"source": c.get("document_keyword", c.get("document_name", "未知"))}
+                for c in chunks if isinstance(c, dict)
+            ]
+            return _normalize_ragflow_result({"documents": documents, "metadatas": metadatas})
         if isinstance(inner, dict):
             return _normalize_ragflow_result(inner)
         if isinstance(inner, list):
@@ -123,4 +138,4 @@ def list_knowledge_bases() -> Dict[str, Any]:
             return {"error": f"HTTP {resp.status_code}"}
         return resp.json()
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e)}   

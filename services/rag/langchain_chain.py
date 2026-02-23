@@ -16,6 +16,7 @@ from core.redis_store import get_conversation_context, save_conversation_context
 from app.intent import get_intent_label_cn, recognize as recognize_intent
 from app.query_rewrite import rewrite as rewrite_query
 from app.compliance import check_and_mask
+from app.model_plan import get_dashscope_model_for_plan
 from services.rag.langchain_ragflow_retriever import RAGflowRetriever
 from services.rag.langchain_dashscope_llm import DashScopeLLM
 from services.rag.pipeline import save_interaction_log, save_compliance_log
@@ -56,6 +57,7 @@ def run_chat_with_langchain(
     *,
     intent_mode: Optional[str] = None,
     rewrite_mode: Optional[str] = None,
+    model_plan: Optional[str] = None,
     use_chroma_recall: bool = False,
     chroma_collection_name: Optional[str] = None,
     chroma_k: int = 3,
@@ -121,7 +123,8 @@ def run_chat_with_langchain(
         input_variables=["knowledge_content", "context", "query"],
         template=INSURANCE_PROMPT_TEMPLATE,
     )
-    llm = DashScopeLLM()
+    model_name = get_dashscope_model_for_plan(model_plan)
+    llm = DashScopeLLM(model_name=model_name)
     chain = LLMChain(llm=llm, prompt=prompt)
     answer = chain.run(
         knowledge_content=knowledge_content,

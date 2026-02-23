@@ -33,7 +33,7 @@ class DashScopeLLM(LLM):
     # 若将来要扩展更多控制参数，可以在这里定义（如 temperature、max_tokens 等）
     model_name: str = Field(
         default="qwen-turbo",
-        description="DashScope 使用的模型名称（当前 _call_dashscope 内部固定为 qwen-turbo，仅作文档提示）。",
+        description="DashScope 使用的模型名称，如 qwen-turbo、qwen-plus，会传给 _call_dashscope。",
     )
     max_tokens: int = Field(
         default=1024,
@@ -59,8 +59,8 @@ class DashScopeLLM(LLM):
         - stop：可选的停止词列表，若出现则截断
         - 返回：模型生成的文本结果
         """
-        # 直接调用项目里已经实现好的 DashScope 封装函数
-        text = _call_dashscope(prompt)
+        # 直接调用项目里已经实现好的 DashScope 封装函数，传入当前实例的 model_name
+        text = _call_dashscope(prompt, model=self.model_name)
 
         # 处理 stop tokens：如果配置了 stop，就在结果里找到第一个 stop 并截断
         if stop:

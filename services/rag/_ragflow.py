@@ -26,20 +26,20 @@ def call_ragflow(
     t = timeout if timeout is not None else settings.RAGFLOW_TIMEOUT
     if not base_url:
         return {"error": "RAGflow API 未配置（RAGFLOW_API_URL）"}
-    # 若 URL 里带 knowledge 且配了 api_key，部分 RAGflow 版本要求在 body 里传 api_key
+    # RAGflow 官方检索接口：POST /api/v1/retrieval
+    request_url = base_url.rstrip("/") + "/retrieval" if not base_url.rstrip("/").endswith("retrieval") else base_url
     if api_key and "knowledge" in base_url.lower():
-        payload = {"query": query, "top_k": k, "api_key": api_key}
+        payload = {"question": query, "top_k": k, "api_key": api_key}
     else:
-        payload = {"query": query, "top_k": k}
+        payload = {"question": query, "top_k": k}
     if kb_id:
-        payload["knowledge_base_id"] = kb_id
+        payload["dataset_ids"] = [kb_id] if isinstance(kb_id, str) else list(kb_id)
     headers = {"Content-Type": "application/json"}
-    # 若 body 里没带 api_key，则用 Bearer 方式放在请求头
     if api_key and "api_key" not in payload:
         headers["Authorization"] = f"Bearer {api_key}"
     try:
         with httpx.Client(timeout=t) as client:
-            resp = client.post(base_url, json=payload, headers=headers)
+            resp = client.post(request_url, json=payload, headers=headers)
     except Exception as e:
         return {"error": f"RAGflow 调用异常：{str(e)}"}
     if resp.status_code != 200:
@@ -50,9 +50,19 @@ def call_ragflow(
         return {"error": "RAGflow 返回非 JSON"}
     if "error" in data:
         return {"error": data["error"]}
-    # 兼容：有的接口把真实数据放在 data 字段里
+    if data.get("code") is not None and data.get("code") != 0:
+        return {"error": data.get("message", "RAGflow 返回错误")}
+    # RAGflow 官方 retrieval：data.chunks[]
     if "data" in data:
         inner = data["data"]
+        if isinstance(inner, dict) and "chunks" in inner:
+            chunks = inner["chunks"] or []
+            documents = [c.get("content", "") for c in chunks if isinstance(c, dict)]
+            metadatas = [
+                {"source": c.get("document_keyword", c.get("document_name", "未知"))}
+                for c in chunks if isinstance(c, dict)
+            ]
+            return _normalize({"documents": documents, "metadatas": metadatas})
         if isinstance(inner, dict):
             return _normalize(inner)
         if isinstance(inner, list):

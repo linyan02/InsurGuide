@@ -45,9 +45,11 @@ def generate_answer(
     context: List[Dict[str, Any]],
     *,
     do_compliance: bool = True,
+    model: Optional[str] = None,
 ) -> str:
     """
     结合 RAGflow 检索结果与历史上下文生成答案。do_compliance=True 时会调用合规检测并替换违规词。
+    model：DashScope 模型名，如 qwen-turbo、qwen-plus，空则用默认。
     """
     knowledge_content = build_knowledge_content(ragflow_result)
     context_str = json.dumps(context, ensure_ascii=False) if context else "无"
@@ -56,41 +58,43 @@ def generate_answer(
         context=context_str,
         query=query,
     )
-    answer = call_light_llm(prompt)
+    answer = call_light_llm(prompt, model=model)
     if do_compliance:
         answer, _ = check_and_mask(answer)
     return answer
 
 
-def call_light_llm(prompt: str) -> str:
+def call_light_llm(prompt: str, model: Optional[str] = None) -> str:
     """
     调用轻量 LLM 生成回复。
     优先使用 API 模式（通义千问/OpenAI），无 GPU 时推荐；可选本地 Qwen。
+    model：API 模式下使用的 DashScope/OpenAI 模型名，空则用默认。
     """
     mode = (settings.LLM_MODE or "api").lower()
     if mode == "local":
         return _call_local_llm(prompt)
-    return _call_api_llm(prompt)
+    return _call_api_llm(prompt, model=model)
 
 
-def _call_api_llm(prompt: str) -> str:
-    """通义千问或 OpenAI 等 API"""
+def _call_api_llm(prompt: str, model: Optional[str] = None) -> str:
+    """通义千问或 OpenAI 等 API。model 仅对 DashScope 生效，空则用 qwen-turbo。"""
     if settings.DASHSCOPE_API_KEY:
-        return _call_dashscope(prompt)
+        return _call_dashscope(prompt, model=model)
     if settings.OPENAI_API_KEY:
         return _call_openai(prompt)
     return _fallback_answer(prompt)
 
 
-def _call_dashscope(prompt: str) -> str:
-    """通义千问 API"""
+def _call_dashscope(prompt: str, model: Optional[str] = None) -> str:
+    """通义千问 API。model 为空时使用 qwen-turbo。"""
+    model_name = (model or "qwen-turbo").strip() or "qwen-turbo"
     try:
         import httpx
         resp = httpx.post(
             "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
             headers={"Authorization": f"Bearer {settings.DASHSCOPE_API_KEY}"},
             json={
-                "model": "qwen-turbo",
+                "model": model_name,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 1024,
             },

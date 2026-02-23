@@ -25,6 +25,7 @@ from app.query_rewrite import rewrite as rewrite_query
 from app.ragflow_client import call_ragflow
 from app.answer_engine import generate_answer
 from app.compliance import check_and_mask
+from app.model_plan import get_dashscope_model_for_plan
 
 
 def save_interaction_log(
@@ -88,6 +89,7 @@ def run_chat_pipeline(
     *,
     intent_mode: Optional[str] = None,
     rewrite_mode: Optional[str] = None,
+    model_plan: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     执行一轮增强 RAG 对话（与 chat_once 一致）：
@@ -127,7 +129,8 @@ def run_chat_pipeline(
             err_out["intent_fallback_reason"] = intent_result.get("fallback_reason")
         return err_out
     # 用检索到的知识库内容 + 历史 context 生成答案；这里先不做合规，下面统一做并记日志
-    answer = generate_answer(query, ragflow_result, context, do_compliance=False)
+    dashscope_model = get_dashscope_model_for_plan(model_plan)
+    answer = generate_answer(query, ragflow_result, context, do_compliance=False, model=dashscope_model)
     # 对答案做违规词检测，违规词会被替换为 [违规表述已屏蔽]；violated 表示是否发生过替换
     answer, violated = check_and_mask(answer)
     if violated:
