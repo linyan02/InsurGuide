@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智保灵犀 Agent - 交互原型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义色彩与动画 */
+        :root { --gemini-blue: #1a73e8; --dark-bg: #131314; --dark-card: #1e1f20; }
+        .dark-mode { background-color: var(--dark-bg); color: #e3e3e3; }
+        .dark-mode aside { background-color: var(--dark-card); border-color: #333; }
+        .dark-mode .bg-white { background-color: var(--dark-card) !important; color: #e3e3e3; }
+        .dark-mode .bg-gray-100 { background-color: #282a2d !important; }
+        .dark-mode border { border-color: #444746; }
+        
+        .animate-slide-up { animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 隐藏滚动条但保留功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-50 transition-colors duration-300 font-sans">
+<div id="auth-page" class="flex items-center justify-center h-screen relative z-50 bg-inherit">
+        <div class="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 text-center">
+            <h2 class="text-3xl font-bold text-blue-600 mb-2">智保灵犀</h2>
+            <p id="auth-desc" class="text-gray-500 mb-8">开启您的 AI 保险专家之旅</p>
+            <div class="space-y-4">
+                <input type="email" id="user-email" placeholder="电子邮箱" class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                <input type="password" id="user-pass" placeholder="设置密码" class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                <button onclick="enterApp()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">立即进入</button>
+            </div>
+            <p class="mt-6 text-sm text-gray-400">点击进入即表示同意服务协议</p>
+        </div>
+    </div>
+
+    <div id="main-app" class="hidden flex h-screen overflow-hidden">
+        <aside class="w-64 border-r border-gray-200 flex flex-col bg-white transition-all">
+            <div class="p-4">
+                <button onclick="window.location.reload()" class="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-600 rounded-2xl font-semibold hover:bg-blue-100">+ 新对话</button>
+            </div>
+            <div class="flex-1 px-4 space-y-2 overflow-y-auto no-scrollbar">
+                <p class="text-[11px] font-bold text-gray-400 uppercase mt-4 mb-2 px-2">最近记录</p>
+                <div class="p-3 text-sm hover:bg-gray-100 rounded-xl cursor-pointer truncate">关于终身寿险的分析</div>
+            </div>
+            <div class="p-4 border-t space-y-2">
+                <button onclick="toggleTheme()" class="w-full text-left p-3 hover:bg-gray-100 rounded-xl text-sm flex items-center gap-3">
+                    <span id="t-icon">🌙</span> <span id="t-text">黑夜模式</span>
+                </button>
+                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl dark:bg-zinc-800">
+                    <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">U</div>
+                    <div class="text-xs truncate font-medium">demo@lixiang.com</div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col relative">
+            <header class="p-4 flex items-center">
+                <select id="model-select" class="bg-transparent font-bold text-xl outline-none cursor-pointer border-none hover:bg-gray-100 rounded-lg p-1">
+                    <option>智保灵犀 - 专业版</option>
+                    <option>智保灵犀 - 标准版</option>
+                </select>
+            </header>
+
+            <div id="chat-content" class="flex-1 overflow-y-auto p-6 space-y-8 flex flex-col items-center no-scrollbar">
+                <div id="welcome-ui" class="text-center mt-32 animate-slide-up">
+                    <h1 class="text-5xl font-bold mb-6 bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 bg-clip-text text-transparent">您好，我是智保灵犀</h1>
+                    <p class="text-gray-500 text-lg">上传保险单据，为您提供精准的条款解析与保障建议</p>
+                </div>
+            </div>
+
+            <div class="p-6 max-w-4xl mx-auto w-full">
+                <div id="input-area" class="bg-gray-100 rounded-[32px] p-4 transition-all border-2 border-transparent focus-within:bg-white focus-within:border-blue-400 focus-within:shadow-xl">
+                    <div id="file-preview-box" class="hidden flex items-center gap-2 bg-white w-max px-3 py-2 rounded-2xl mb-3 shadow-sm border border-blue-100 animate-slide-up">
+                        <span class="text-blue-500 font-bold">DOC</span>
+                        <span id="fn" class="text-xs font-medium text-gray-600"></span>
+                        <button onclick="cancelFile()" class="text-gray-400 hover:text-red-500 font-bold ml-1">×</button>
+                    </div>
+                    <textarea id="main-input" rows="1" placeholder="在此输入保险咨询问题..." class="w-full bg-transparent outline-none resize-none px-2 text-lg"></textarea>
+                    <div class="flex justify-between items-center mt-4">
+                        <div class="flex gap-2">
+                            <input type="file" id="f-upload" class="hidden" onchange="showFile(this)">
+                            <button onclick="document.getElementById('f-upload').click()" class="p-3 hover:bg-gray-200 rounded-full transition text-xl" title="上传附件">📎</button>
+                        </div>
+                        <button onclick="handleSend()" class="bg-blue-600 text-white px-8 py-2.5 rounded-full font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100">发送</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+        // 模拟进入主应用
+        function enterApp() {
+            const email = document.getElementById('user-email').value;
+            if(!email) { alert("请输入邮箱"); return; }
+            document.getElementById('auth-page').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+        }
+
+        // 模式切换
+        function toggleTheme() {
+            const isDark = document.body.classList.toggle('dark-mode');
+            document.getElementById('t-text').innerText = isDark ? '白天模式' : '黑夜模式';
+            document.getElementById('t-icon').innerText = isDark ? '☀️' : '🌙';
+        }
+
+        // 文件处理
+        function showFile(input) {
+            if (input.files.length > 0) {
+                document.getElementById('fn').innerText = input.files[0].name;
+                document.getElementById('file-preview-box').classList.remove('hidden');
+            }
+        }
+        function cancelFile() {
+            document.getElementById('f-upload').value = '';
+            document.getElementById('file-preview-box').classList.add('hidden');
+        }
+
+        // 发送逻辑
+        function handleSend() {
+            const input = document.getElementById('main-input');
+            const box = document.getElementById('chat-content');
+            const fileBox = document.getElementById('file-preview-box');
+            
+            if (!input.value.trim() && fileBox.classList.contains('hidden')) return;
+
+            document.getElementById('welcome-ui').classList.add('hidden');
+
+            // 1. 用户消息
+            const userHtml = `
+                <div class="w-full max-w-3xl flex flex-col items-end animate-slide-up">
+                    <div class="bg-blue-600 text-white p-5 rounded-3xl rounded-tr-none shadow-md">
+                        ${!fileBox.classList.contains('hidden') ? '<div class="text-[10px] bg-blue-700 p-2 rounded-lg mb-2">已上传文件：'+document.getElementById('fn').innerText+'</div>' : ''}
+                        ${input.value}
+                    </div>
+                </div>`;
+            box.innerHTML += userHtml;
+            
+            // 重置
+            const tempVal = input.value;
+            input.value = '';
+            cancelFile();
+            box.scrollTop = box.scrollHeight;
+
+            // 2. 模拟 AI 回复
+            setTimeout(() => {
+                const aiHtml = `
+                    <div class="w-full max-w-3xl flex gap-4 animate-slide-up">
+                        <div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold shadow-sm">灵</div>
+                        <div class="bg-white border p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 leading-relaxed">
+                            您好！我是智保灵犀。关于您咨询的“${tempVal || '保险文件'}”，我正在进行多维度的条款比对与风险扫描。在保险理赔方面，您需要特别关注免赔额与等待期条款...
+                        </div>
+                    </div>`;
+                box.innerHTML += aiHtml;
+                box.scrollTop = box.scrollHeight;
+            }, 1000);
+        }
+
+        // 自动换行高度
+        document.getElementById('main-input').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+    </script>
+</body>
+</html>
