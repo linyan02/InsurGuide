@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from core.redis_store import get_conversation_context, save_conversation_context
-from app.intent import get_intent_label_cn, recognize as recognize_intent
+from app.intent import INTENT_MEDICAL_INSURANCE, get_intent_label_cn, recognize as recognize_intent
+from app.llm_short import extract_insurance_slots
 from app.query_rewrite import rewrite as rewrite_query
 from app.compliance import check_and_mask
 from app.model_plan import get_dashscope_model_for_plan
 from services.rag.langchain_ragflow_retriever import RAGflowRetriever
 from services.rag.langchain_dashscope_llm import DashScopeLLM
-from services.rag.pipeline import save_interaction_log, save_compliance_log
+from services.rag.pipeline import STATE_COMPLETE, STATE_GUIDING, save_interaction_log, save_compliance_log
 
 
 # 与 app.answer_engine 保持一致，供 LangChain Prompt 使用
@@ -70,8 +71,36 @@ def run_chat_with_langchain(
     context = get_conversation_context(user_id)
     intent_result = recognize_intent(query, mode=intent_mode)
     intent_result["intent_cn"] = get_intent_label_cn(intent_result.get("intent", "other"))
-    rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
-    search_query = rewrite_result["rewritten_query"]
+
+    # 需求分析拦截器：百万医疗险意图
+    intent_name = intent_result.get("intent", "other")
+    if intent_name == INTENT_MEDICAL_INSURANCE:
+        slots_result = extract_insurance_slots(query, context)
+        if not slots_result.get("is_complete", False):
+            guide_question = slots_result.get("guide_question") or (
+                "百万医疗险对年龄和健康状况要求较高。请问被保人多大年纪？"
+                "是否有医保？过去两年是否有过住院记录或慢性病、结节等情况？"
+            )
+            save_conversation_context(user_id, query, guide_question)
+            return {
+                "answer": guide_question,
+                "sources": [],
+                "context_count": len(context) + 1,
+                "violated": False,
+                "state": STATE_GUIDING,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "intent_method": intent_result.get("method", "rule"),
+                "rewritten_query": query,
+                "rewrite_changed": False,
+                "rewrite_method": "none",
+            }
+        search_query = slots_result.get("search_optimization_query") or query
+        rewrite_result = {"rewritten_query": search_query, "changed": True, "method": "extract_slots"}
+    else:
+        rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
+        search_query = rewrite_result["rewritten_query"]
 
     # 主路：RAGflow Retriever
     top_k = getattr(settings, "RAGFLOW_TOP_K", 5)
@@ -104,6 +133,7 @@ def run_chat_with_langchain(
             "sources": [],
             "context_count": len(context),
             "violated": False,
+            "state": STATE_COMPLETE,
             "intent": intent_result.get("intent", "other"),
             "intent_cn": intent_result.get("intent_cn"),
             "intent_confidence": intent_result.get("confidence", 0),
@@ -152,6 +182,7 @@ def run_chat_with_langchain(
         "sources": sources,
         "context_count": len(context) + 1,
         "violated": violated,
+        "state": STATE_COMPLETE,
         "intent": intent_result.get("intent", "other"),
         "intent_cn": intent_result.get("intent_cn"),
         "intent_confidence": intent_result.get("confidence", 0),

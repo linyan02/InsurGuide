@@ -25,6 +25,7 @@ INTENT_CLAIMS = "claims"
 INTENT_UNDERWRITING = "underwriting"
 INTENT_PRODUCT = "product"
 INTENT_GREETING = "greeting"
+INTENT_MEDICAL_INSURANCE = "medical_insurance"  # 百万医疗险：住院报销、大病保障等，触发要素引导
 INTENT_OTHER = "other"
 
 ALL_INTENTS = [
@@ -34,11 +35,17 @@ ALL_INTENTS = [
     INTENT_UNDERWRITING,
     INTENT_PRODUCT,
     INTENT_GREETING,
+    INTENT_MEDICAL_INSURANCE,
     INTENT_OTHER,
 ]
 
 # 规则模式：意图 -> 关键词/短语列表
 INTENT_KEYWORDS: Dict[str, List[str]] = {
+    INTENT_MEDICAL_INSURANCE: [
+        "住院报销", "报销住院", "报销医疗", "医疗费报销", "医药费", "大病保障",
+        "百万医疗", "医疗险", "续保", "免赔额", "住院费", "住院费报销",
+        "那个报销", "怎么报销", "报销多少钱", "住院的多少钱",
+    ],
     INTENT_CLAIMS: [
         "理赔", "赔付", "报销", "索赔", "理赔条件", "理赔流程", "理赔材料",
         "报案", "理赔款", "拒赔", "理赔时效", "理赔申请",
@@ -49,7 +56,7 @@ INTENT_KEYWORDS: Dict[str, List[str]] = {
     ],
     INTENT_PRODUCT: [
         "保费", "多少钱", "价格", "费率", "保障范围", "保额", "产品对比",
-        "哪款", "推荐", "哪种好", "重疾险", "医疗险", "寿险", "意外险",
+        "哪款", "推荐", "哪种好", "重疾险", "寿险", "意外险",
     ],
     INTENT_RETRIEVAL: [
         "条款", "规定", "定义", "什么是", "如何界定", "等待期", "免责",
@@ -122,13 +129,14 @@ def _llm_intent(
     if llm_call is None:
         from app.llm_short import call as llm_call
     base_prompt = """你是一个保险领域意图分类器。请判断用户问题的意图，只输出以下 exactly 一个标签，不要任何解释或标点。
-可选标签：retrieval, consultation, claims, underwriting, product, greeting, other
+可选标签：retrieval, consultation, claims, underwriting, product, greeting, medical_insurance, other
 - retrieval: 查条款、规则、定义、等待期、免责等
 - consultation: 一般咨询、建议、是否合适、怎么办
-- claims: 理赔条件、流程、材料、赔付、报销
+- claims: 理赔条件、流程、材料、赔付、报销（非医疗险产品咨询）
 - underwriting: 核保、健康告知、除外、加费、疾病核保
-- product: 保费、价格、产品对比、保障范围、哪款好
+- product: 保费、价格、产品对比、保障范围、哪款好（非医疗险）
 - greeting: 问候、寒暄
+- medical_insurance: 百万医疗险相关。包括：住院报销、医疗费报销、医药费、大病保障、续保、免赔额、医疗险多少钱、那个报销住院的、怎么报销医药费等模糊表达。用户想了解或购买报销住院/医疗费的保险时，归为此类。
 - other: 其他
 """
     if extra_rules_text:
@@ -283,6 +291,7 @@ def get_intent_label_cn(intent: str) -> str:
         INTENT_UNDERWRITING: "核保",
         INTENT_PRODUCT: "产品咨询",
         INTENT_GREETING: "问候",
+        INTENT_MEDICAL_INSURANCE: "百万医疗险",
         INTENT_OTHER: "其他",
     }
     return labels.get(intent, intent)

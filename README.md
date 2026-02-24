@@ -6,7 +6,8 @@
 > **项目说明**：[doc/项目说明.md](doc/项目说明.md)  
 > **中间件与安装**：[README_MIDDLEWARE.md](README_MIDDLEWARE.md)  
 > **详细技术实现**：[doc/详细技术实现方案.md](doc/详细技术实现方案.md)  
-> **阿里云 ECS Docker 部署**：[doc/Docker部署说明-阿里云ECS.md](doc/Docker部署说明-阿里云ECS.md)（后续更新可执行 `./scripts/deploy.sh` 一键部署）
+> **阿里云 ECS Docker 部署**：[doc/Docker部署说明-阿里云ECS.md](doc/Docker部署说明-阿里云ECS.md)（后续更新可执行 `./scripts/deploy.sh` 一键部署）  
+> **运维小白一步一操**：[doc/ECS服务器Docker部署指南-小白版.md](doc/ECS服务器Docker部署指南-小白版.md)（MySQL/Redis/ES 已安装，按步骤部署）
 
 ## 项目特性
 

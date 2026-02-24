@@ -39,6 +39,40 @@ def build_knowledge_content(ragflow_result: Dict[str, Any]) -> str:
     return "\n\n".join(parts) if parts else "暂无相关知识库内容"
 
 
+def _extract_images_and_cases(ragflow_result: Dict[str, Any]) -> str:
+    """
+    解析 RAGflow 返回的图片元数据与案例，生成 Markdown 富文本块。
+    支持 metadatas 中的 image_url、img_url、type: case 等字段。
+    """
+    metadatas = ragflow_result.get("metadatas") or []
+    documents = ragflow_result.get("documents") or []
+    blocks: List[str] = []
+    for i, meta in enumerate(metadatas):
+        if not isinstance(meta, dict):
+            continue
+        # 图片：常见字段 image_url, img_url, image
+        img_url = meta.get("image_url") or meta.get("img_url") or meta.get("image")
+        if img_url and isinstance(img_url, str) and img_url.startswith(("http", "/")):
+            blocks.append(f"\n\n![图片]({img_url})\n")
+        # 案例：type 为 case 的片段，封装为引用块
+        chunk_type = meta.get("type") or meta.get("chunk_type")
+        if chunk_type == "case" and i < len(documents):
+            content = documents[i] if isinstance(documents[i], str) else str(documents[i])
+            if content.strip():
+                blocks.append(f"\n\n> **相似案例**\n> {content}\n")
+    return "\n".join(blocks) if blocks else ""
+
+
+def enrich_answer_with_rich_content(answer: str, ragflow_result: Dict[str, Any]) -> str:
+    """
+    将 RAGflow 返回的图片、案例追加到答案，生成富文本 Markdown。
+    """
+    extra = _extract_images_and_cases(ragflow_result)
+    if not extra:
+        return answer
+    return answer.rstrip() + "\n\n" + extra
+
+
 def generate_answer(
     query: str,
     ragflow_result: Dict[str, Any],
@@ -61,6 +95,7 @@ def generate_answer(
     answer = call_light_llm(prompt, model=model)
     if do_compliance:
         answer, _ = check_and_mask(answer)
+    answer = enrich_answer_with_rich_content(answer, ragflow_result)
     return answer
 
 

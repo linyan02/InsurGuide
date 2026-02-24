@@ -90,6 +90,7 @@ def chat(
             "context_count": result["context_count"],
             "source": result.get("sources") or [],
             "violated": result.get("violated", False),
+            "state": result.get("state", "COMPLETE"),
             "intent": result.get("intent", "other"),
             "intent_cn": result.get("intent_cn", "其他"),
             "intent_confidence": result.get("intent_confidence", 0),

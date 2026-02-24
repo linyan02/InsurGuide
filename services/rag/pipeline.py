@@ -20,12 +20,21 @@ from core.redis_store import (
 from models.chat_log import ComplianceLog, InteractionLog
 
 # 意图、改写、RAGflow、答案生成、合规均复用 app 层实现，保证与 chat_once 一致
-from app.intent import get_intent_label_cn, recognize as recognize_intent
+from app.intent import (
+    INTENT_MEDICAL_INSURANCE,
+    get_intent_label_cn,
+    recognize as recognize_intent,
+)
+from app.llm_short import extract_insurance_slots
 from app.query_rewrite import rewrite as rewrite_query
 from app.ragflow_client import call_ragflow
 from app.answer_engine import generate_answer
 from app.compliance import check_and_mask
 from app.model_plan import get_dashscope_model_for_plan
+
+# 引导状态：要素未补全时返回追问，不执行 RAG 检索
+STATE_GUIDING = "GUIDING"
+STATE_COMPLETE = "COMPLETE"
 
 
 def save_interaction_log(
@@ -102,8 +111,34 @@ def run_chat_pipeline(
     intent_result = recognize_intent(query, mode=intent_mode)
     # 给意图加上中文展示名，便于前端或日志使用
     intent_result["intent_cn"] = get_intent_label_cn(intent_result.get("intent", "other"))
-    # 结合 context 对 query 做改写（补全指代、省略），得到可独立检索的完整问句
-    rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
+    # ---------- 需求分析拦截器：百万医疗险意图时，先做要素提取 ----------
+    intent_name = intent_result.get("intent", "other")
+    if intent_name == INTENT_MEDICAL_INSURANCE:
+        slots_result = extract_insurance_slots(query, context)
+        if not slots_result.get("is_complete", False):
+            guide_question = slots_result.get("guide_question") or (
+                "百万医疗险对年龄和健康状况要求较高。请问被保人多大年纪？"
+                "是否有医保？过去两年是否有过住院记录或慢性病、结节等情况？"
+            )
+            save_conversation_context(user_id, query, guide_question)
+            return {
+                "answer": guide_question,
+                "sources": [],
+                "context_count": len(context) + 1,
+                "violated": False,
+                "state": STATE_GUIDING,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "intent_method": intent_result.get("method", "rule"),
+                "rewritten_query": query,
+                "rewrite_changed": False,
+                "rewrite_method": "none",
+            }
+        search_query = slots_result.get("search_optimization_query") or query
+        rewrite_result = {"rewritten_query": search_query, "changed": True, "method": "extract_slots"}
+    else:
+        rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
     # 用改写后的问句去检索知识库，而不是用用户原句（避免“那理赔呢”这种短句检索差）
     search_query = rewrite_result["rewritten_query"]
     # 调用 RAGflow 接口，返回 { documents: [...], metadatas: [...] } 或 { error: "..." }
@@ -116,6 +151,7 @@ def run_chat_pipeline(
             "sources": [],
             "context_count": len(context),
             "violated": False,
+            "state": STATE_COMPLETE,
             "intent": intent_result.get("intent", "other"),
             "intent_cn": intent_result.get("intent_cn"),
             "intent_confidence": intent_result.get("confidence", 0),
@@ -153,6 +189,7 @@ def run_chat_pipeline(
         "sources": sources,
         "context_count": len(context) + 1,
         "violated": violated,
+        "state": STATE_COMPLETE,
         "intent": intent_result.get("intent", "other"),
         "intent_cn": intent_result.get("intent_cn"),
         "intent_confidence": intent_result.get("confidence", 0),
