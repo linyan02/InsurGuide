@@ -5,7 +5,8 @@
 > **架构说明**：[doc/架构说明.md](doc/架构说明.md)  
 > **项目说明**：[doc/项目说明.md](doc/项目说明.md)  
 > **中间件与安装**：[README_MIDDLEWARE.md](README_MIDDLEWARE.md)  
-> **详细技术实现**：[doc/详细技术实现方案.md](doc/详细技术实现方案.md)
+> **详细技术实现**：[doc/详细技术实现方案.md](doc/详细技术实现方案.md)  
+> **阿里云 ECS Docker 部署**：[doc/Docker部署说明-阿里云ECS.md](doc/Docker部署说明-阿里云ECS.md)
 
 ## 项目特性
 

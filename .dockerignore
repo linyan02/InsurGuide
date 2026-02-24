@@ -1,0 +1,48 @@
+# 虚拟环境与本地安装
+venv/
+.venv/
+env/
+.env
+.env.*
+!.env.example
+
+# 版本控制与 IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 测试与文档（不参与运行）
+tests/
+*.md
+!README.md
+doc/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Gradio 演示（API 镜像不包含 Gradio 前端，仅保留 web/static）
+gradio_ui/
+gradio_app.py
+
+# 向量库与本地数据（运行时由挂载或环境变量指定）
+vector_db/
+
+# 日志与临时
+*.log
+.DS_Store
+*.tmp
