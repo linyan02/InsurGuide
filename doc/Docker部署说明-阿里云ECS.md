@@ -15,12 +15,28 @@
 
 ---
 
-## 二、构建镜像
+## 二、获取代码（从 Git 拉取）
+
+在 ECS 上先拉取项目代码，再基于该目录构建镜像。例如：
+
+```bash
+# 选一个你放项目的目录，如 /opt 或 /home/ubuntu
+cd /opt
+git clone https://github.com/你的用户名/InsurGuide.git
+cd InsurGuide
+# 若使用 SSH：git clone git@github.com:你的用户名/InsurGuide.git
+```
+
+若仓库是私有的，需在 ECS 上配置 Git 认证（SSH 密钥或 HTTPS 凭据）。拉取后确认当前目录下有 `Dockerfile`、`requirements.txt` 再继续下一步。
+
+---
+
+## 三、构建镜像
 
 在项目根目录（含 `Dockerfile`、`requirements.txt`）执行：
 
 ```bash
-cd /path/to/InsurGuide
+cd /path/to/InsurGuide   # 即上一步 clone 后的目录
 docker build -t insurguide:latest .
 ```
 
@@ -32,7 +48,7 @@ docker build -t your-registry.cn-hangzhou.aliyuncs.com/your-ns/insurguide:v1.0 .
 
 ---
 
-## 三、配置环境变量（连接已有中间件）
+## 四、配置环境变量（连接已有中间件）
 
 容器通过**环境变量**连接 MySQL、Redis、RAGflow。请按实际中间件地址填写。
 
@@ -98,7 +114,7 @@ docker run -d --name insurguide -p 8000:8000 \
 
 ---
 
-## 四、运行容器
+## 五、运行容器
 
 使用 env 文件启动（推荐）：
 
@@ -122,13 +138,13 @@ docker logs -f insurguide
 
 ---
 
-## 五、阿里云 ECS 安全组
+## 六、阿里云 ECS 安全组
 
 在 ECS 控制台为实例安全组放通 **8000** 端口（入方向），以便外网或负载均衡访问 API。若仅通过 Nginx/SLB 反代，可只对 SLB 或内网开放。
 
 ---
 
-## 六、验证部署
+## 七、验证部署
 
 在 ECS 本机或同 VPC 机器执行：
 
@@ -144,7 +160,7 @@ curl http://localhost:8000/
 
 ---
 
-## 七、可选：使用 docker-compose
+## 八、可选：使用 docker-compose
 
 若希望用 compose 管理单容器 + env 文件，可在项目根目录创建 `docker-compose.yml`：
 
@@ -169,20 +185,59 @@ docker compose up -d
 
 ---
 
-## 八、更新与回滚
+## 九、一键部署（后续更新）
 
-1. **更新**：重新构建镜像并替换容器  
-   ```bash
-   docker build -t insurguide:latest .
-   docker stop insurguide && docker rm insurguide
-   docker run -d --name insurguide -p 8000:8000 --env-file .env.production --restart unless-stopped insurguide:latest
-   ```
+首次安装部署完成后，之后每次只需**拉取最新代码并执行一条命令**即可完成部署。
 
-2. **回滚**：使用旧镜像 tag 再跑一次上述 `docker run` 即可。
+### 使用部署脚本（推荐）
+
+项目已提供 `scripts/deploy.sh`，会依次执行：`git pull` → 构建镜像 → 停止旧容器 → 启动新容器。
+
+在 ECS 上，进入项目根目录后执行：
+
+```bash
+cd /path/to/InsurGuide
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
+```
+
+脚本会使用当前目录下的 `.env.production`；若环境变量文件不在项目根目录，可指定：
+
+```bash
+ENV_FILE=/opt/insurguide.env ./scripts/deploy.sh
+```
+
+可选变量：`IMAGE_NAME`（默认 `insurguide:latest`）、`CONTAINER_NAME`（默认 `insurguide`）、`PORT`（默认 `8000`）。
+
+### 手动更新步骤
+
+若不想用脚本，可手动执行：
+
+```bash
+cd /path/to/InsurGuide
+git pull
+docker build -t insurguide:latest .
+docker stop insurguide && docker rm insurguide
+docker run -d --name insurguide -p 8000:8000 --env-file .env.production --restart unless-stopped insurguide:latest
+```
 
 ---
 
-## 九、常见问题
+## 十、回滚
+
+若新版本有问题，可用旧镜像重新运行容器（部署前可先 `docker tag` 保留当前版本）：
+
+```bash
+# 例：保留当前镜像为 old，再拉代码用新镜像部署；出问题时用 old 回滚
+docker tag insurguide:latest insurguide:old
+# 回滚时：
+docker stop insurguide && docker rm insurguide
+docker run -d --name insurguide -p 8000:8000 --env-file .env.production --restart unless-stopped insurguide:old
+```
+
+---
+
+## 十一、常见问题
 
 | 现象 | 处理 |
 |------|------|
