@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # ---------- MySQL 数据库 ----------
     # 用于存用户信息、交互日志、合规日志等
-    MYSQL_HOST: str = "127.0.0.1"
+    MYSQL_HOST: str = "121.41.189.203"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = "ZhiBao123**"
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # ---------- Redis（多轮对话上下文） ----------
     # 用 Redis 存每个用户最近几轮「问-答」，这样下一轮回答时能结合上文
-    REDIS_HOST: str = "127.0.0.1"
+    REDIS_HOST: str = "121.41.189.203"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0                   # Redis 有多个逻辑库，0 是默认
     REDIS_PASSWORD: Optional[str] = "ZhiBao123**"
