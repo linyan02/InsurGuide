@@ -341,6 +341,39 @@ chmod +x scripts/deploy.sh
 
 脚本会：`git pull` → 重新构建镜像 → 停止旧容器 → 启动新容器。
 
+### 十二点一、为什么每次构建都这么慢？如何加速？
+
+**原因说明**：
+
+| 阶段 | 耗时 | 说明 |
+|------|------|------|
+| 首次构建 | 5～15 分钟 | 需下载 Python 基础镜像、执行 apt-get、安装大量 Python 依赖（如 chromadb、faiss、sentence-transformers 等），耗时主要集中在 `pip install` |
+| 仅代码更新后的构建 | 约 30 秒～2 分钟 | Docker 会利用**层缓存**：若 `requirements.txt` 未变，`pip install` 步骤会被跳过，只重新复制代码并生成新镜像 |
+
+**若每次更新都感觉像“全量重建”很慢**，常见原因：
+
+1. **`requirements.txt` 经常变动**：一旦改动，会重新执行 `pip install`，耗时明显
+2. **执行过 `docker system prune`**：会清理构建缓存，下次构建需重新下载和安装
+3. **在全新环境或新机器上部署**：没有历史缓存，必然是全量构建
+
+**加速建议**（满足“拉取最新代码后，用最新代码部署”的需求）：
+
+- **保持默认构建**：`deploy.sh` 已使用 `docker build`（未加 `--no-cache`），Docker 会自动利用缓存
+- **只改业务代码时**：构建应较快（约 1 分钟内），因为依赖层被缓存
+- **依赖变更时**：`requirements.txt` 改动后的第一次构建会较慢，属正常现象
+
+若想进一步加速首次或依赖变更后的构建，可启用 BuildKit 缓存（需 Docker 20.10+）：
+
+```bash
+# 设置环境变量启用 BuildKit（一次性，或加入 ~/.bashrc）
+export DOCKER_BUILDKIT=1
+
+# 之后照常执行部署
+./scripts/deploy.sh
+```
+
+启用后，pip 下载的包会被缓存，后续构建可明显缩短。
+
 ---
 
 ## 十二点五、配置命令别名（在任何目录都能执行部署）

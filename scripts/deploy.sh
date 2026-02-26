@@ -22,8 +22,9 @@ echo ""
 echo "[1/4] 拉取最新代码..."
 git pull
 
-# 2. 构建镜像
+# 2. 构建镜像（启用 BuildKit 加速，Docker 20.10+ 支持）
 echo "[2/4] 构建 Docker 镜像..."
+export DOCKER_BUILDKIT=1
 docker build -t "$IMAGE_NAME" .
 
 # 3. 停止并删除旧容器（存在则执行）
