@@ -2,17 +2,45 @@
 RAGflow 调用模块 - 检索知识库
 与产品技术文档中的「RAGflow 核心 API」对齐：传入提问 + 知识库 ID，返回匹配文本片段与来源
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 from config import settings
 
 
+def get_coverage_kb_ids() -> List[str]:
+    """
+    解析保障重叠度专用知识库 ID 配置。
+    支持 RAGFLOW_COVERAGE_KB_IDS（逗号分隔）或 COVERAGE_OVERLAP_KB_ID。
+    空则返回默认 RAGFLOW_KNOWLEDGE_BASE_ID。
+    """
+    ids_str = (
+        getattr(settings, "RAGFLOW_COVERAGE_KB_IDS", None)
+        or getattr(settings, "COVERAGE_OVERLAP_KB_IDS", None)
+        or getattr(settings, "COVERAGE_OVERLAP_KB_ID", None)
+    )
+    default = getattr(settings, "RAGFLOW_KNOWLEDGE_BASE_ID", None)
+    if not ids_str:
+        return [default] if default else []
+    parts = [x.strip() for x in str(ids_str).split(",") if x.strip()]
+    return parts if parts else ([default] if default else [])
+
+
+def enhance_query_for_intent(query: str, intent: str) -> str:
+    """
+    按意图追加检索关键词，提升 RAGflow 召回精准度。
+    """
+    if intent == "coverage_overlap" and getattr(settings, "COVERAGE_OVERLAP_QUERY_ENHANCE", True):
+        return f"{query} 免赔额 门诊 住院 身故 险种责任 理赔逻辑"
+    return query
+
+
 def call_ragflow(
     query: str,
-    knowledge_base_id: Optional[str] = None,
+    knowledge_base_id: Optional[Union[str, List[str]]] = None,
     top_k: Optional[int] = None,
     timeout: Optional[int] = None,
+    keyword: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     调用 RAGflow 检索知识库。
@@ -41,6 +69,8 @@ def call_ragflow(
         payload["dataset_ids"] = [kb_id] if isinstance(kb_id, str) else list(kb_id)
     if api_key and _ragflow_uses_api_key_in_body(base_url):
         payload["api_key"] = api_key
+    if keyword is not None:
+        payload["keyword"] = bool(keyword)
 
     headers = {"Content-Type": "application/json"}
     if api_key and not payload.get("api_key"):

@@ -2,14 +2,17 @@
 增强 RAG 多轮对话接口 - 产品文档核心接口
 
 - POST /api/chat：一轮问答，传 user_id、query，可选 intent_mode、rewrite_mode，返回 answer、sources、意图等。
+- POST /api/chat/stream：流式对话，返回 SSE，逐 chunk 推送答案。
 - POST /api/chat/clear：清除该用户的对话上下文（Redis），相当于「重新开始」。
 - GET /api/chat/history：当前用户最近若干条对话记录（标题列表），需登录。
 - GET /api/chat/history/{log_id}：获取单条记录详情（问+答），用于点击「最近记录」展示并继续对话，需登录。
 - POST /api/chat/context/restore：将当前用户上下文恢复为指定记录的那一轮，以便基于该对话继续问答，需登录。
 """
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -20,6 +23,7 @@ from core.redis_store import clear_conversation_context, save_conversation_conte
 from models.chat_log import InteractionLog
 from models.user import User
 from services.rag.pipeline import run_chat_pipeline
+from services.rag.pipeline_stream import run_chat_pipeline_stream
 from services.rag.langchain_chain import run_chat_with_langchain
 
 router = APIRouter(prefix="/api", tags=["增强RAG对话"])
@@ -99,6 +103,44 @@ def chat(
             "rewrite_changed": result.get("rewrite_changed", False),
             "rewrite_method": result.get("rewrite_method", "none"),
             **({"intent_fallback_reason": result["intent_fallback_reason"]} if result.get("intent_fallback_reason") is not None else {}),
+        },
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    body: ChatRequest = Body(..., description="用户唯一标识与提问"),
+    db: Session = Depends(get_db),
+):
+    """
+    流式对话接口：返回 SSE，答案逐 chunk 推送。仅使用标准 pipeline，不支持 LangChain 模式。
+    """
+    user_id = (body.user_id or "").strip()
+    query = (body.query or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id 不能为空")
+    if not query:
+        raise HTTPException(status_code=400, detail="query 不能为空")
+
+    async def event_generator():
+        try:
+            async for event in run_chat_pipeline_stream(
+                db, user_id, query,
+                intent_mode=body.intent_mode,
+                rewrite_mode=body.rewrite_mode,
+                model_plan=body.model_plan,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 

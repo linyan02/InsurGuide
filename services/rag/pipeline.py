@@ -20,15 +20,24 @@ from core.redis_store import (
 from models.chat_log import ComplianceLog, InteractionLog
 
 # 意图、改写、RAGflow、答案生成、合规均复用 app 层实现，保证与 chat_once 一致
+from config import settings
 from app.intent import (
+    INTENT_COVERAGE_OVERLAP,
     INTENT_MEDICAL_INSURANCE,
     get_intent_label_cn,
     recognize as recognize_intent,
 )
 from app.llm_short import extract_insurance_slots
+from app.coverage_slots import extract_coverage_slots
+from app.coverage_overlap import compute_coverage_gap
 from app.query_rewrite import rewrite as rewrite_query
-from app.ragflow_client import call_ragflow
+from app.ragflow_client import (
+    call_ragflow,
+    enhance_query_for_intent,
+    get_coverage_kb_ids,
+)
 from app.answer_engine import generate_answer
+from app.context_compressor import compress_context
 from app.compliance import check_and_mask
 from app.model_plan import get_dashscope_model_for_plan
 
@@ -137,6 +146,100 @@ def run_chat_pipeline(
             }
         search_query = slots_result.get("search_optimization_query") or query
         rewrite_result = {"rewritten_query": search_query, "changed": True, "method": "extract_slots"}
+    elif intent_name == INTENT_COVERAGE_OVERLAP and getattr(
+        settings, "COVERAGE_OVERLAP_ENABLED", True
+    ):
+        slots_result = extract_coverage_slots(query, context)
+        if not slots_result.get("is_complete", False):
+            guide_question = slots_result.get("guide_question") or "请补充您的保障情况以便分析。"
+            save_conversation_context(user_id, query, guide_question)
+            return {
+                "answer": guide_question,
+                "sources": [],
+                "context_count": len(context) + 1,
+                "violated": False,
+                "state": STATE_GUIDING,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "intent_method": intent_result.get("method", "rule"),
+                "rewritten_query": query,
+                "rewrite_changed": False,
+                "rewrite_method": "none",
+            }
+        rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
+        search_query = enhance_query_for_intent(
+            rewrite_result["rewritten_query"], INTENT_COVERAGE_OVERLAP
+        )
+        kb_ids = get_coverage_kb_ids()
+        top_k = getattr(settings, "COVERAGE_OVERLAP_TOP_K", 5)
+        use_keyword = getattr(settings, "COVERAGE_OVERLAP_KEYWORD", True)
+        ragflow_result = call_ragflow(
+            search_query,
+            knowledge_base_id=kb_ids if kb_ids else None,
+            top_k=top_k,
+            keyword=use_keyword,
+        )
+        if "error" in ragflow_result:
+            return {
+                "error": ragflow_result["error"],
+                "answer": None,
+                "sources": [],
+                "context_count": len(context),
+                "violated": False,
+                "state": STATE_COMPLETE,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "intent_method": intent_result.get("method", "rule"),
+                "rewritten_query": rewrite_result.get("rewritten_query", query),
+                "rewrite_changed": rewrite_result.get("changed", False),
+                "rewrite_method": rewrite_result.get("method", "none"),
+            }
+        analysis_result = compute_coverage_gap(
+            slots_result,
+            ragflow_result.get("documents") or [],
+        )
+        compressed = compress_context(
+            query,
+            context,
+            rewritten_query=rewrite_result.get("rewritten_query"),
+        )
+        dashscope_model = get_dashscope_model_for_plan(model_plan)
+        answer = generate_answer(
+            query,
+            ragflow_result,
+            compressed,
+            do_compliance=False,
+            model=dashscope_model,
+            intent_name=INTENT_COVERAGE_OVERLAP,
+            coverage_slots=slots_result,
+            analysis_result=analysis_result,
+        )
+        answer, violated = check_and_mask(answer)
+        if violated:
+            save_compliance_log(db, user_id, query, answer, violated=True, remark="违规表述屏蔽")
+        metadatas = ragflow_result.get("metadatas") or []
+        sources = [m.get("source", m.get("document_name", "未知")) for m in metadatas]
+        save_conversation_context(user_id, query, answer)
+        save_interaction_log(
+            db, user_id, query, answer,
+            source_count=len(ragflow_result.get("documents") or []),
+        )
+        return {
+            "answer": answer,
+            "sources": sources,
+            "context_count": len(context) + 1,
+            "violated": violated,
+            "state": STATE_COMPLETE,
+            "intent": intent_name,
+            "intent_cn": intent_result.get("intent_cn"),
+            "intent_confidence": intent_result.get("confidence", 0),
+            "intent_method": intent_result.get("method", "rule"),
+            "rewritten_query": rewrite_result.get("rewritten_query", query),
+            "rewrite_changed": rewrite_result.get("changed", False),
+            "rewrite_method": rewrite_result.get("method", "none"),
+        }
     else:
         rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
     # 用改写后的问句去检索知识库，而不是用用户原句（避免“那理赔呢”这种短句检索差）
@@ -164,9 +267,14 @@ def run_chat_pipeline(
         if intent_result.get("fallback_reason") is not None:
             err_out["intent_fallback_reason"] = intent_result.get("fallback_reason")
         return err_out
-    # 用检索到的知识库内容 + 历史 context 生成答案；这里先不做合规，下面统一做并记日志
+    # 用检索到的知识库内容 + 压缩后上下文生成答案
+    compressed = compress_context(
+        query,
+        context,
+        rewritten_query=rewrite_result.get("rewritten_query"),
+    )
     dashscope_model = get_dashscope_model_for_plan(model_plan)
-    answer = generate_answer(query, ragflow_result, context, do_compliance=False, model=dashscope_model)
+    answer = generate_answer(query, ragflow_result, compressed, do_compliance=False, model=dashscope_model)
     # 对答案做违规词检测，违规词会被替换为 [违规表述已屏蔽]；violated 表示是否发生过替换
     answer, violated = check_and_mask(answer)
     if violated:

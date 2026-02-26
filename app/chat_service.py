@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.answer_engine import generate_answer
+from app.context_compressor import compress_context
 from app.compliance import check_and_mask
 from app.context_store import get_conversation_context, save_conversation_context
 from app.intent import get_intent_label_cn, recognize as recognize_intent
@@ -111,8 +112,13 @@ def chat_once(
         if intent_result.get("fallback_reason") is not None:
             err_out["intent_fallback_reason"] = intent_result.get("fallback_reason")
         return err_out
-    # 5. 用检索结果 + 上下文生成答案；这里先不在这层做合规，下面统一做并记日志
-    answer = generate_answer(query, ragflow_result, context, do_compliance=False)
+    # 5. 用检索结果 + 压缩后上下文生成答案
+    compressed = compress_context(
+        query,
+        context,
+        rewritten_query=rewrite_result.get("rewritten_query"),
+    )
+    answer = generate_answer(query, ragflow_result, compressed, do_compliance=False)
     answer, violated = check_and_mask(answer)
     if violated:
         save_compliance_log(

@@ -86,6 +86,26 @@ class Settings(BaseSettings):
     # ---------- 增强 RAG 模式 ----------
     # True：使用 LangChain 编排（RAGflowRetriever + DashScopeLLM + 可选 Chroma）；False：使用原有 pipeline
     USE_LANGCHAIN_RAG: bool = False
+    # 答案输出格式：True=结构化意见（Markdown），False=沿用旧版简洁模板
+    ANSWER_USE_OPINION_FORMAT: bool = True
+
+    # ---------- 保障重叠度透视镜 ----------
+    COVERAGE_OVERLAP_ENABLED: bool = True
+    COVERAGE_OVERLAP_KB_ID: Optional[str] = None      # 单库时用，空则用默认 RAGFLOW_KNOWLEDGE_BASE_ID
+    COVERAGE_OVERLAP_KB_IDS: Optional[str] = None   # 多库：逗号分隔 "id1,id2"
+    COVERAGE_OVERLAP_TOP_K: int = 5
+    COVERAGE_OVERLAP_QUERY_ENHANCE: bool = True     # 是否启用 query 增强
+    COVERAGE_OVERLAP_KEYWORD: bool = True            # RAGflow 是否启用 keyword 匹配
+
+    # ---------- 对话上下文压缩 ----------
+    CONTEXT_COMPRESSION_ENABLED: bool = True
+    CONTEXT_SELECTION_MODE: str = "hybrid"  # recent_only | similarity | hybrid
+    CONTEXT_RECENT_REQUIRED: int = 1
+    CONTEXT_MAX_TURNS: int = 5
+    CONTEXT_TURN_ANSWER_MAX_CHARS: int = 150
+    CONTEXT_TURN_QUERY_MAX_CHARS: int = 50
+    CONTEXT_MAX_TOKENS: int = 800
+    CONTEXT_SIMILARITY_METHOD: str = "keyword"  # keyword | embedding
 
     # ---------- Gradio 演示页 ----------
     GRADIO_PORT: int = 7860

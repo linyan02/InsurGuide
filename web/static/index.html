@@ -32,13 +32,26 @@
         .dark-mode .case-card { background: #1e3a5f; border-left-color: #60a5fa; }
         .ai-answer-content img { max-width: 100%; border-radius: 8px; margin: 0.5rem 0; }
         .ai-answer-content blockquote { border-left: 4px solid #1a73e8; padding-left: 1rem; margin: 0.5rem 0; color: #374151; }
+        .ai-answer-content h2 { font-size: 1.125rem; font-weight: 600; margin: 1rem 0 0.5rem; color: #1f2937; }
+        .ai-answer-content h3 { font-size: 1rem; font-weight: 600; margin: 0.75rem 0 0.375rem; color: #374151; }
+        .ai-answer-content ul, .ai-answer-content ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+        .ai-answer-content li { margin: 0.25rem 0; }
+        .ai-answer-content table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; font-size: 0.875rem; min-width: 280px; }
+        .ai-answer-content { overflow-wrap: break-word; word-break: break-word; }
+        .ai-answer-content th, .ai-answer-content td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
+        .ai-answer-content th { background: #f3f4f6; font-weight: 600; }
+        .ai-answer-content tr:nth-child(even) { background: #f9fafb; }
+        .dark-mode .ai-answer-content h2, .dark-mode .ai-answer-content h3 { color: #e5e7eb; }
+        .dark-mode .ai-answer-content th, .dark-mode .ai-answer-content td { border-color: #374151; }
+        .dark-mode .ai-answer-content th { background: #374151; }
+        .dark-mode .ai-answer-content tr:nth-child(even) { background: #1f2937; }
     </style>
 </head>
 <body class="bg-gray-50 transition-colors duration-300 font-sans">
     <!-- 认证页：登录 / 注册 -->
-    <div id="auth-page" class="flex items-center justify-center min-h-screen relative z-50 bg-inherit">
-        <div class="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 text-center dark:bg-[var(--dark-card)] dark:border-gray-600">
-            <h2 class="text-3xl font-bold text-blue-600 mb-2">智保灵犀</h2>
+    <div id="auth-page" class="flex items-center justify-center min-h-screen relative z-50 bg-inherit px-4">
+        <div class="bg-white p-6 sm:p-10 rounded-3xl shadow-2xl w-full max-w-md border border-gray-100 text-center dark:bg-[var(--dark-card)] dark:border-gray-600">
+            <h2 class="text-2xl sm:text-3xl font-bold text-blue-600 mb-2">智保灵犀</h2>
             <p class="text-gray-500 dark:text-gray-400 mb-6">开启您的 AI 保险专家之旅</p>
             <div id="auth-tabs" class="flex gap-4 justify-center mb-6">
                 <button type="button" id="tab-login" class="px-4 py-2 rounded-xl font-medium bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">登录</button>
@@ -64,7 +77,9 @@
 
     <!-- 主应用 -->
     <div id="main-app" class="hidden flex h-screen overflow-hidden">
-        <aside class="w-64 border-r border-gray-200 flex flex-col bg-white transition-all dark:bg-[var(--dark-card)] dark:border-gray-700">
+        <!-- 遮罩层：小屏侧栏展开时显示，点击关闭 -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/40 z-30 hidden lg:hidden" aria-hidden="true"></div>
+        <aside id="sidebar" class="w-64 shrink-0 border-r border-gray-200 flex flex-col bg-white dark:bg-[var(--dark-card)] dark:border-gray-700 fixed lg:relative inset-y-0 left-0 z-40 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-out">
             <div class="p-4">
                 <button type="button" id="btn-new-chat" class="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-600 rounded-2xl font-semibold hover:bg-blue-100 dark:bg-blue-900/40 dark:hover:bg-blue-900/60">+ 新对话</button>
             </div>
@@ -86,23 +101,24 @@
             </div>
         </aside>
 
-        <main class="flex-1 flex flex-col relative min-w-0">
-            <header class="p-4 flex items-center shrink-0 border-b border-gray-200 dark:border-gray-700">
-                <select id="model-select" class="bg-transparent font-bold text-xl outline-none cursor-pointer border-none hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-1">
+        <main class="flex-1 flex flex-col relative min-w-0 overflow-x-hidden">
+            <header class="p-4 flex items-center gap-3 shrink-0 border-b border-gray-200 dark:border-gray-700">
+                <button type="button" id="btn-toggle-sidebar" class="lg:hidden flex items-center justify-center w-11 h-11 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="菜单" aria-label="打开菜单">☰</button>
+                <select id="model-select" class="flex-1 sm:flex-none bg-transparent font-bold text-base sm:text-xl outline-none cursor-pointer border-none hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-1 min-w-0">
                     <option value="pro">智保灵犀 - 专业版</option>
                     <option value="standard">智保灵犀 - 标准版</option>
                 </select>
             </header>
 
-            <div id="chat-content" class="flex-1 overflow-y-auto p-6 space-y-8 flex flex-col items-center no-scrollbar chat-content">
-                <div id="welcome-ui" class="text-center mt-32 animate-slide-up">
-                    <h1 class="text-5xl font-bold mb-6 bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 bg-clip-text text-transparent">您好，我是智保灵犀</h1>
-                    <p class="text-gray-500 dark:text-gray-400 text-lg">上传保险单据，为您提供精准的条款解析与保障建议</p>
+            <div id="chat-content" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-8 flex flex-col items-center no-scrollbar chat-content">
+                <div id="welcome-ui" class="text-center mt-16 sm:mt-24 lg:mt-32 animate-slide-up px-4">
+                    <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 bg-clip-text text-transparent">您好，我是智保灵犀</h1>
+                    <p class="text-gray-500 dark:text-gray-400 text-base sm:text-lg">上传保险单据，为您提供精准的条款解析与保障建议</p>
                 </div>
             </div>
 
-            <div class="p-6 max-w-4xl mx-auto w-full shrink-0">
-                <div id="input-area" class="bg-gray-100 dark:bg-gray-800 rounded-[32px] p-4 transition-all border-2 border-transparent focus-within:bg-white focus-within:border-blue-400 focus-within:shadow-xl dark:focus-within:bg-gray-800">
+            <div class="p-4 sm:p-6 max-w-4xl mx-auto w-full shrink-0">
+                <div id="input-area" class="bg-gray-100 dark:bg-gray-800 rounded-[32px] p-3 sm:p-4 transition-all border-2 border-transparent focus-within:bg-white focus-within:border-blue-400 focus-within:shadow-xl dark:focus-within:bg-gray-800">
                     <div id="file-preview-box" class="hidden flex items-center gap-2 bg-white dark:bg-gray-700 w-max px-3 py-2 rounded-2xl mb-3 shadow-sm border border-blue-100 dark:border-gray-600 animate-slide-up">
                         <span class="text-blue-500 font-bold">DOC</span>
                         <span id="fn" class="text-xs font-medium text-gray-600 dark:text-gray-300"></span>
@@ -114,7 +130,7 @@
                             <input type="file" id="f-upload" class="hidden" accept=".pdf,.doc,.docx,.txt" />
                             <button type="button" id="btn-upload" class="p-3 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition text-xl" title="上传附件">📎</button>
                         </div>
-                        <button type="button" id="btn-send" class="bg-blue-600 text-white px-8 py-2.5 rounded-full font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100 dark:shadow-none">发送</button>
+                        <button type="button" id="btn-send" class="bg-blue-600 text-white px-6 py-3 sm:px-8 sm:py-2.5 rounded-full font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100 dark:shadow-none min-h-[44px]">发送</button>
                     </div>
                 </div>
             </div>
@@ -167,6 +183,10 @@
             if (localStorage.getItem(THEME_KEY) === 'dark') applyTheme(true);
 
             document.getElementById('btn-theme').addEventListener('click', toggleTheme);
+
+            document.getElementById('btn-toggle-sidebar')?.addEventListener('click', toggleSidebar);
+            document.getElementById('sidebar-overlay')?.addEventListener('click', closeSidebar);
+            window.addEventListener('resize', syncSidebarForViewport);
 
             // 认证 Tab
             document.getElementById('tab-login').addEventListener('click', function () {
@@ -279,6 +299,7 @@
             // 新对话
             document.getElementById('btn-new-chat').addEventListener('click', async function () {
                 if (!currentUser) return;
+                closeSidebar();
                 try {
                     await fetch(API_BASE + '/api/chat/clear', {
                         method: 'POST',
@@ -347,11 +368,12 @@
                             clearChatUI();
                             document.getElementById('welcome-ui').classList.add('hidden');
                             var box = document.getElementById('chat-content');
-                            var userHtml = '<div class="w-full max-w-3xl flex flex-col items-end animate-slide-up chat-msg">' +
-                                '<div class="bg-blue-600 text-white p-5 rounded-3xl rounded-tr-none shadow-md">' + nl2br(d.query || '') + '</div></div>';
-                            var aiHtml = '<div class="w-full max-w-3xl flex gap-4 animate-slide-up chat-msg">' +
+                            closeSidebar();
+                            var userHtml = '<div class="w-full max-w-[95%] sm:max-w-3xl flex flex-col items-end animate-slide-up chat-msg">' +
+                                '<div class="bg-blue-600 text-white p-4 sm:p-5 rounded-3xl rounded-tr-none shadow-md">' + nl2br(d.query || '') + '</div></div>';
+                            var aiHtml = '<div class="w-full max-w-[95%] sm:max-w-3xl flex gap-3 sm:gap-4 animate-slide-up chat-msg">' +
                                 '<div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold shadow-sm shrink-0">灵</div>' +
-                                '<div class="bg-white dark:bg-gray-800 border dark:border-gray-600 p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 dark:text-gray-200 leading-relaxed">' + nl2br(d.answer || '') + '</div></div>';
+                                '<div class="bg-white dark:bg-gray-800 border dark:border-gray-600 p-4 sm:p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 dark:text-gray-200 leading-relaxed ai-answer-content">' + renderAnswer(d.answer || '') + '</div></div>';
                             box.insertAdjacentHTML('beforeend', userHtml + aiHtml);
                             scrollToBottom();
                             await fetch(API_BASE + '/api/chat/context/restore', {
@@ -400,6 +422,48 @@
                 return escapeHtml(s || '').replace(/\n/g, '<br>');
             }
 
+            function renderAnswer(rawAnswer) {
+                if (!rawAnswer || !String(rawAnswer).trim()) return '';
+                var text = String(rawAnswer).trim();
+                if (typeof marked === 'undefined') return nl2br(text);
+                try {
+                    marked.setOptions({ breaks: true });
+                    var html = marked.parse(text);
+                    html = html.replace(/<blockquote>/g, '<blockquote class="case-card">');
+                    html = html.replace(/<table>/g, '<div class="overflow-x-auto rounded-lg my-2"><table>').replace(/<\/table>/g, '</table></div>');
+                    return html;
+                } catch (e) {
+                    return nl2br(text);
+                }
+            }
+
+            function closeSidebar() {
+                var sidebar = document.getElementById('sidebar');
+                var overlay = document.getElementById('sidebar-overlay');
+                if (sidebar) sidebar.classList.add('-translate-x-full');
+                if (sidebar) sidebar.classList.remove('translate-x-0');
+                if (overlay) overlay.classList.add('hidden');
+            }
+            function openSidebar() {
+                var sidebar = document.getElementById('sidebar');
+                var overlay = document.getElementById('sidebar-overlay');
+                if (sidebar) sidebar.classList.remove('-translate-x-full');
+                if (sidebar) sidebar.classList.add('translate-x-0');
+                if (overlay) overlay.classList.remove('hidden');
+            }
+            function toggleSidebar() {
+                var sidebar = document.getElementById('sidebar');
+                if (!sidebar) return;
+                var isOpen = sidebar.classList.contains('translate-x-0');
+                if (isOpen) closeSidebar();
+                else openSidebar();
+            }
+            function syncSidebarForViewport() {
+                if (window.matchMedia('(min-width: 1024px)').matches) {
+                    document.getElementById('sidebar-overlay')?.classList.add('hidden');
+                } else closeSidebar();
+            }
+
             document.getElementById('btn-send').addEventListener('click', handleSend);
             document.getElementById('main-input').addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -417,8 +481,8 @@
                 document.getElementById('welcome-ui').classList.add('hidden');
 
                 const fileName = hasFile ? document.getElementById('fn').textContent : '';
-                const userHtml = '<div class="w-full max-w-3xl flex flex-col items-end animate-slide-up chat-msg">' +
-                    '<div class="bg-blue-600 text-white p-5 rounded-3xl rounded-tr-none shadow-md">' +
+                const userHtml = '<div class="w-full max-w-[95%] sm:max-w-3xl flex flex-col items-end animate-slide-up chat-msg">' +
+                    '<div class="bg-blue-600 text-white p-4 sm:p-5 rounded-3xl rounded-tr-none shadow-md">' +
                     (hasFile ? '<div class="text-[10px] bg-blue-700 p-2 rounded-lg mb-2">已上传文件：' + escapeHtml(fileName) + '</div>' : '') +
                     nl2br(text || '（仅上传文件）') +
                     '</div></div>';
@@ -429,58 +493,80 @@
                 scrollToBottom();
 
                 const placeholderId = 'ai-msg-' + Date.now();
-                const placeholderHtml = '<div id="' + placeholderId + '" class="w-full max-w-3xl flex gap-4 animate-slide-up chat-msg">' +
+                const placeholderHtml = '<div id="' + placeholderId + '" class="w-full max-w-[95%] sm:max-w-3xl flex gap-3 sm:gap-4 animate-slide-up chat-msg">' +
                     '<div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center font-bold shadow-sm shrink-0">灵</div>' +
-                    '<div class="bg-white dark:bg-gray-800 border dark:border-gray-600 p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 dark:text-gray-200 leading-relaxed">思考中…</div></div>';
+                    '<div class="bg-white dark:bg-gray-800 border dark:border-gray-600 p-4 sm:p-6 rounded-3xl rounded-tl-none shadow-sm text-gray-800 dark:text-gray-200 leading-relaxed">思考中…</div></div>';
                 box.insertAdjacentHTML('beforeend', placeholderHtml);
                 scrollToBottom();
 
                 try {
                     var modelPlan = (document.getElementById('model-select').value || 'standard').trim();
-                    const r = await fetch(API_BASE + '/api/chat', {
+                    const r = await fetch(API_BASE + '/api/chat/stream', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ user_id: currentUser.username, query: queryToSend, model_plan: modelPlan })
                     });
-                    const data = await r.json();
                     const container = document.getElementById(placeholderId);
                     if (!container) return;
                     const contentDiv = container.querySelector('div:last-child');
-                    if (data.code === 200 && data.data) {
-                        const d = data.data;
-                        let rawAnswer = d.answer || '';
-                        let html;
-                        if (typeof marked !== 'undefined' && (rawAnswer.includes('![') || rawAnswer.includes('> **相似案例**') || rawAnswer.includes('\n> '))) {
-                            try {
-                                marked.setOptions({ breaks: true });
-                                html = marked.parse(rawAnswer);
-                                html = html.replace(/<blockquote>/g, '<blockquote class="case-card">');
-                            } catch (_) {
-                                html = nl2br(rawAnswer);
-                            }
-                        } else {
-                            html = nl2br(rawAnswer);
-                        }
-                        contentDiv.classList.add('ai-answer-content');
-                        if (d.source && d.source.length) {
-                            html += '<div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600 text-xs text-gray-500 dark:text-gray-400">来源：' + escapeHtml(d.source.join('、')) + '</div>';
-                        }
-                        if (d.intent_cn) {
-                            html += '<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">意图：' + escapeHtml(d.intent_cn) + '</div>';
-                        }
-                        if (d.state === 'GUIDING') {
-                            html += '<div class="mt-2 text-xs text-blue-600 dark:text-blue-400">💬 正在引导补全信息</div>';
-                        }
-                        contentDiv.innerHTML = html;
-                        loadHistory();
-                    } else {
-                        contentDiv.innerHTML = '回复失败：' + escapeHtml(data.message || data.detail || '未知错误');
+                    if (!r.ok) {
+                        contentDiv.innerHTML = '请求失败：' + escapeHtml(String(r.status));
                         contentDiv.classList.add('text-red-500');
+                        scrollToBottom();
+                        return;
+                    }
+                    var fullText = '';
+                    function processEvent(event) {
+                        if (event.type === 'chunk' && event.content) {
+                            fullText += event.content;
+                            contentDiv.textContent = fullText;
+                            scrollToBottom();
+                        } else if (event.type === 'done') {
+                            var rawAnswer = event.answer || fullText;
+                            var html = renderAnswer(rawAnswer);
+                            contentDiv.classList.add('ai-answer-content');
+                            if (event.source && event.source.length) {
+                                html += '<div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600 text-xs text-gray-500 dark:text-gray-400">来源：' + escapeHtml(event.source.join('、')) + '</div>';
+                            }
+                            if (event.intent_cn) {
+                                html += '<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">意图：' + escapeHtml(event.intent_cn) + '</div>';
+                            }
+                            if (event.state === 'GUIDING') {
+                                html += '<div class="mt-2 text-xs text-blue-600 dark:text-blue-400">💬 正在引导补全信息</div>';
+                            }
+                            contentDiv.innerHTML = html;
+                            loadHistory();
+                        } else if (event.type === 'error') {
+                            contentDiv.textContent = '错误：' + escapeHtml(event.message || '未知错误');
+                            contentDiv.classList.add('text-red-500');
+                        }
+                    }
+                    var buffer = '';
+                    const reader = r.body.getReader();
+                    const decoder = new TextDecoder();
+                    while (true) {
+                        var res = await reader.read();
+                        if (res.done) break;
+                        buffer += decoder.decode(res.value, { stream: true });
+                        var parts = buffer.split('\n\n');
+                        buffer = parts.pop() || '';
+                        for (var i = 0; i < parts.length; i++) {
+                            var line = parts[i];
+                            if (!line || !line.startsWith('data: ')) continue;
+                            try {
+                                processEvent(JSON.parse(line.slice(6)));
+                            } catch (_) {}
+                        }
+                    }
+                    if (buffer.trim() && buffer.trim().startsWith('data: ')) {
+                        try {
+                            processEvent(JSON.parse(buffer.trim().slice(6)));
+                        } catch (_) {}
                     }
                 } catch (err) {
-                    const container = document.getElementById(placeholderId);
+                    var container = document.getElementById(placeholderId);
                     if (container) {
-                        const contentDiv = container.querySelector('div:last-child');
+                        var contentDiv = container.querySelector('div:last-child');
                         contentDiv.innerHTML = '请求错误：' + escapeHtml(err.message || String(err));
                         contentDiv.classList.add('text-red-500');
                     }

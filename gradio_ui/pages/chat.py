@@ -115,7 +115,7 @@ def render():
             rag_user_id = gr.Textbox(label="用户 ID", placeholder="用于多轮上下文的唯一标识")
             rag_query = gr.Textbox(label="提问", placeholder="例如：重疾险甲状腺结节核保规则")
             rag_btn = gr.Button("发送", variant="primary")
-            rag_answer = gr.Textbox(label="答案", lines=8)
+            rag_answer = gr.Markdown(label="答案")
             rag_meta = gr.Textbox(label="溯源与轮数", lines=3)
             rag_btn.click(
                 fn=_chat_rag,

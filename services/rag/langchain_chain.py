@@ -21,24 +21,17 @@ from app.model_plan import get_dashscope_model_for_plan
 from services.rag.langchain_ragflow_retriever import RAGflowRetriever
 from services.rag.langchain_dashscope_llm import DashScopeLLM
 from services.rag.pipeline import STATE_COMPLETE, STATE_GUIDING, save_interaction_log, save_compliance_log
+from app.answer_engine import (
+    INSURANCE_PROMPT_TEMPLATE,
+    INSURANCE_OPINION_PROMPT_TEMPLATE,
+)
+from app.context_compressor import compress_context
 
 
-# 与 app.answer_engine 保持一致，供 LangChain Prompt 使用
-INSURANCE_PROMPT_TEMPLATE = """
-基于以下知识库内容，结合用户历史对话上下文，回答用户问题，要求：
-1. 语言简洁，符合保险行业规范，避免专业术语过度堆砌；
-2. 必须引用知识库内容，禁止编造信息；
-3. 结尾添加合规声明：本内容仅供参考，不构成投保建议，具体以保险合同条款为准。
-
-知识库内容：
-{knowledge_content}
-
-历史上下文：
-{context}
-
-用户问题：
-{query}
-"""
+def _get_prompt_template() -> str:
+    """根据配置返回使用的 Prompt 模板。"""
+    use_opinion = getattr(settings, "ANSWER_USE_OPINION_FORMAT", True)
+    return INSURANCE_OPINION_PROMPT_TEMPLATE if use_opinion else INSURANCE_PROMPT_TEMPLATE
 
 
 def _build_knowledge_content_from_docs(docs: List[Document]) -> str:
@@ -147,11 +140,16 @@ def run_chat_with_langchain(
         return err_out
 
     knowledge_content = _build_knowledge_content_from_docs(docs)
-    context_str = json.dumps(context, ensure_ascii=False) if context else "无"
+    compressed = compress_context(
+        query,
+        context,
+        rewritten_query=rewrite_result.get("rewritten_query"),
+    )
+    context_str = json.dumps(compressed, ensure_ascii=False) if compressed else "无"
 
     prompt = PromptTemplate(
         input_variables=["knowledge_content", "context", "query"],
-        template=INSURANCE_PROMPT_TEMPLATE,
+        template=_get_prompt_template(),
     )
     model_name = get_dashscope_model_for_plan(model_plan)
     llm = DashScopeLLM(model_name=model_name)
