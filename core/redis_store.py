@@ -16,6 +16,11 @@ from config import settings
 _redis_client = None
 
 
+def get_redis_client():
+    """获取 Redis 客户端，供其他模块复用（如条款上下文管理）。"""
+    return _get_redis()
+
+
 def _get_redis():
     """获取 Redis 连接。若未连上（没装 Redis 或配置错）返回 None，调用方要能接受。"""
     global _redis_client

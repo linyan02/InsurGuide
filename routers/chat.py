@@ -41,6 +41,8 @@ class ChatRequest(BaseModel):
     intent_mode: Optional[str] = None   # rule | llm | llm_vector | bert，空则用配置
     rewrite_mode: Optional[str] = None  # rule | llm | llm_vector，空则用配置
     model_plan: Optional[str] = None    # pro=专业版(qwen-plus) | standard=标准版(qwen-turbo)，空则按 standard
+    session_id: Optional[str] = None    # 会话 ID，用于条款上下文（与 clause_ctx 的 session_id 对应）
+    clause_text: Optional[str] = None   # 用户粘贴的条款文本，用于医疗条款解析
 
 
 class ChatResponse(BaseModel):
@@ -79,6 +81,8 @@ def chat(
             intent_mode=body.intent_mode,
             rewrite_mode=body.rewrite_mode,
             model_plan=body.model_plan,
+            session_id=body.session_id,
+            clause_text=body.clause_text,
         )
     if "error" in result:
         return ChatResponse(
@@ -103,6 +107,7 @@ def chat(
             "rewrite_changed": result.get("rewrite_changed", False),
             "rewrite_method": result.get("rewrite_method", "none"),
             **({"intent_fallback_reason": result["intent_fallback_reason"]} if result.get("intent_fallback_reason") is not None else {}),
+            **({"clause_loaded": result["clause_loaded"]} if "clause_loaded" in result else {}),
         },
     )
 
@@ -129,6 +134,8 @@ async def chat_stream(
                 intent_mode=body.intent_mode,
                 rewrite_mode=body.rewrite_mode,
                 model_plan=body.model_plan,
+                session_id=body.session_id,
+                clause_text=body.clause_text,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
@@ -230,7 +237,7 @@ def restore_context(
 ):
     """
     将当前用户的对话上下文恢复为指定历史记录的那一轮（仅保留该条问+答）。
-    之后用户发送新消息时，将基于这一轮继续多轮对话。
+    P2-11：若该轮有 clause_snapshot，一并恢复 clause_ctx 到 Redis，便于继续基于条款追问。
     """
     row = (
         db.query(InteractionLog)
@@ -245,4 +252,29 @@ def restore_context(
         row.query or "",
         row.answer or "",
     )
-    return {"code": 200, "message": "success", "data": None}
+    user_id = current_user.username
+    session_id = getattr(row, "session_id", None) or "default"
+    clause_restored = False
+    file_name = None
+    try:
+        snapshot_raw = getattr(row, "clause_snapshot", None)
+        if snapshot_raw:
+            import json
+            from app.clause_context import restore_clause_context
+            snapshot = json.loads(snapshot_raw or "{}")
+            if isinstance(snapshot, dict) and snapshot and restore_clause_context(user_id, session_id, snapshot):
+                clause_restored = True
+                file_name = snapshot.get("file_name") or snapshot.get("text_preview") or "条款"
+                if isinstance(file_name, str) and len(file_name) > 60:
+                    file_name = file_name[:57] + "..."
+    except Exception:
+        pass
+    return {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "session_id": session_id,
+            "clause_restored": clause_restored,
+            "file_name": file_name,
+        },
+    }

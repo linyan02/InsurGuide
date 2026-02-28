@@ -27,6 +27,7 @@ INTENT_PRODUCT = "product"
 INTENT_GREETING = "greeting"
 INTENT_MEDICAL_INSURANCE = "medical_insurance"  # 百万医疗险：住院报销、大病保障等，触发要素引导
 INTENT_COVERAGE_OVERLAP = "coverage_overlap"    # 保障重叠度分析：是否该买某种保险
+INTENT_CLAUSE_PARSE = "clause_parse"            # 医疗条款解析：基于用户条款咨询与解读
 INTENT_OTHER = "other"
 
 ALL_INTENTS = [
@@ -38,6 +39,7 @@ ALL_INTENTS = [
     INTENT_GREETING,
     INTENT_MEDICAL_INSURANCE,
     INTENT_COVERAGE_OVERLAP,
+    INTENT_CLAUSE_PARSE,
     INTENT_OTHER,
 ]
 
@@ -74,9 +76,16 @@ INTENT_KEYWORDS: Dict[str, List[str]] = {
     INTENT_COVERAGE_OVERLAP: [
         "重叠", "重复", "浪费", "冗余", "重复建设",
         "还需要买吗", "要不要买", "值不值得买", "值得买吗",
-        "学平险浪费", "经纪人说浪费", "代理人说",
-        "已有社保", "有百万医疗", "有补充医疗", "有重疾险",
+        "是否应该购买", "是否应该买", "不知道是否应该",
+        "学平险浪费", "学平险", "经纪人说浪费", "代理人说",
+        "已有社保", "有了医保", "有医保", "有百万医疗", "有补充医疗", "有重疾险",
         "防癌险和百万医疗重复", "重疾险和防癌险买哪个",
+    ],
+    INTENT_CLAUSE_PARSE: [
+        "条款", "合同", "保险合同", "保险责任", "责任免除",
+        "免赔额", "赔付比例", "等待期", "续保条件",
+        "这段什么意思", "这条怎么理解", "能赔吗", "能不能报",
+        "上传条款", "解析条款", "解读条款", "条款咨询",
     ],
 }
 
@@ -138,15 +147,16 @@ def _llm_intent(
     if llm_call is None:
         from app.llm_short import call as llm_call
     base_prompt = """你是一个保险领域意图分类器。请判断用户问题的意图，只输出以下 exactly 一个标签，不要任何解释或标点。
-可选标签：retrieval, consultation, claims, underwriting, product, greeting, medical_insurance, coverage_overlap, other
+可选标签：retrieval, consultation, claims, underwriting, product, greeting, medical_insurance, coverage_overlap, clause_parse, other
 - retrieval: 查条款、规则、定义、等待期、免责等
 - consultation: 一般咨询、建议、是否合适、怎么办
 - claims: 理赔条件、流程、材料、赔付、报销（非医疗险产品咨询）
 - underwriting: 核保、健康告知、除外、加费、疾病核保
 - product: 保费、价格、产品对比、保障范围、哪款好（非医疗险）
 - greeting: 问候、寒暄
-- medical_insurance: 百万医疗险相关。包括：住院报销、医疗费报销、医药费、大病保障、续保、免赔额、医疗险多少钱、那个报销住院的、怎么报销医药费等模糊表达。用户想了解或购买报销住院/医疗费的保险时，归为此类。
-- coverage_overlap: 保障重叠分析。用户问「我已有XX，还需要买YY吗」「YY浪费吗」「经纪人说浪费」等，判断待购险种是否与现有保障重复时，归为此类。
+- medical_insurance: 百万医疗险相关。包括：住院报销、医疗费报销、医药费、大病保障、续保、免赔额、医疗险多少钱、那个报销住院的、怎么报销医药费等模糊表达。用户想了解或购买报销住院/医疗费的保险时，归为此类。注意：若用户已列举多种既有保障（如社保、医保、补充医疗、百万医疗等）并问「是否还应买学平险/其他险」，应归 coverage_overlap，而非本类。
+- coverage_overlap: 保障重叠分析。用户问「我已有XX（如医保、补充医疗、百万医疗等），还需要买YY吗」「YY浪费吗」「是否应该购买YY」「经纪人说浪费」等，判断待购险种是否与现有保障重复、是否值得买时，归为此类。典型句式：已有A+B+C，不知道是否应该买D。
+- clause_parse: 医疗条款解析。用户提供或上传保险条款，想咨询、解读、解析某段内容（免赔额、等待期、责任等）时，归为此类。
 - other: 其他
 """
     if extra_rules_text:
@@ -303,6 +313,7 @@ def get_intent_label_cn(intent: str) -> str:
         INTENT_GREETING: "问候",
         INTENT_MEDICAL_INSURANCE: "百万医疗险",
         INTENT_COVERAGE_OVERLAP: "保障重叠分析",
+        INTENT_CLAUSE_PARSE: "医疗条款解析",
         INTENT_OTHER: "其他",
     }
     return labels.get(intent, intent)

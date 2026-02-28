@@ -1,15 +1,27 @@
 """
 对话服务页：二选一 —— 自建增强 RAG（智保灵犀）或 直接对话大模型
 
-通过单选切换模式，两种能力互不干扰，共用同一 Tab。
+P2-10：智保灵犀区域增加「上传条款」、条款状态、清除，与 PC Web 一致。
 """
 import os
+import time
+import os.path as osp
+import random
+import string
 import requests
 import gradio as gr
 
-from gradio_ui.config import API_CHAT
+from gradio_ui.config import (
+    API_CHAT,
+    API_CLAUSE_UPLOAD,
+    API_CLAUSE_CLEAR,
+)
 
-# 延迟初始化 LLM，仅在选择「直接对话大模型」时使用
+
+def _gen_session_id() -> str:
+    return f"sess_{int(time.time())}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
+
+
 _llm = None
 
 
@@ -35,19 +47,83 @@ def _get_llm():
     return None
 
 
-def _chat_rag(user_id: str, query: str) -> tuple:
-    """自建增强 RAG：调用 /api/chat。"""
+def _upload_clause(file, token: str, session_id: str) -> tuple:
+    """上传条款文件。返回 (status_msg, new_session_id, file_name)"""
+    if file is None:
+        return "请选择文件", session_id, ""
+    if isinstance(file, list) and file:
+        file = file[0]
+    path = getattr(file, "name", None) or (file if isinstance(file, str) else None)
+    orig_name = getattr(file, "orig_name", None) or (osp.basename(path) if path else "upload.pdf")
+    if not path or not isinstance(path, str):
+        return "无效文件", session_id, ""
+    token = (token or "").strip()
+    if not token:
+        return "条款上传需先登录，请填写 Token", session_id, ""
+    sid = session_id or _gen_session_id()
+    try:
+        with open(path, "rb") as f:
+            files = {"file": (orig_name, f)}
+            headers = {"Authorization": f"Bearer {token}"}
+            r = requests.post(
+                API_CLAUSE_UPLOAD(),
+                params={"session_id": sid},
+                files=files,
+                headers=headers,
+                timeout=60,
+            )
+        if r.status_code != 200:
+            err = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+            msg = err.get("detail", r.text or "上传失败")
+            if isinstance(msg, list) and msg and isinstance(msg[0], dict):
+                msg = msg[0].get("msg", str(msg))
+            return f"上传失败: {msg}", sid, ""
+        data = r.json()
+        fn = data.get("file_name", orig_name or "条款")
+        return f"已加载：{fn}", sid, fn
+    except Exception as e:
+        return f"请求错误: {str(e)}", sid, ""
+
+
+def _clear_clause(token: str, session_id: str) -> tuple:
+    """清除条款上下文。返回 (msg, session_id)"""
+    token = (token or "").strip()
+    if not token:
+        return "请先填写 Token", session_id
+    sid = session_id or "default"
+    try:
+        r = requests.post(
+            API_CLAUSE_CLEAR(),
+            json={"session_id": sid},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return "清除失败", sid
+        return "已清除条款", sid
+    except Exception as e:
+        return f"请求错误: {str(e)}", sid
+
+
+def _chat_rag(user_id: str, query: str, token: str, session_id: str) -> tuple:
+    """自建增强 RAG：调用 /api/chat，带 session_id 以绑定条款上下文。"""
     user_id = (user_id or "").strip()
     query = (query or "").strip()
     if not user_id:
-        return "请输入用户 ID（唯一标识）", ""
+        return "请输入用户 ID（唯一标识，条款功能请填登录名）", ""
     if not query:
         return "请输入提问内容", ""
+    sid = session_id or "default"
     try:
+        body = {"user_id": user_id, "query": query, "session_id": sid}
+        headers = {"Content-Type": "application/json"}
+        if (token or "").strip():
+            headers["Authorization"] = f"Bearer {token.strip()}"
         r = requests.post(
             API_CHAT(),
-            json={"user_id": user_id, "query": query},
-            timeout=30,
+            json=body,
+            headers=headers,
+            timeout=60,
         )
         data = r.json()
         if data.get("code") != 200:
@@ -60,10 +136,13 @@ def _chat_rag(user_id: str, query: str) -> tuple:
         intent_cn = d.get("intent_cn", "")
         rewritten = d.get("rewritten_query", "")
         rewrite_changed = d.get("rewrite_changed", False)
+        clause_loaded = d.get("clause_loaded", False)
         source_text = "来源：" + "、".join(sources) if sources else "无"
         if violated:
             source_text += "（已做合规屏蔽）"
         lines = [f"当前对话轮数：{count}", f"意图识别：{intent_cn}", source_text]
+        if clause_loaded:
+            lines.append("📄 基于您上传的条款")
         if rewrite_changed and rewritten:
             lines.append(f"检索用改写问题：{rewritten}")
         return answer, "\n".join(lines)
@@ -109,21 +188,62 @@ def render():
             label="对话模式",
         )
 
-        # 自建增强 RAG 区域
         with gr.Column(visible=True) as col_rag:
             gr.Markdown("**智保灵犀**：基于 RAGflow 知识库的多轮对话，含意图识别、问题改写与合规校验。")
-            rag_user_id = gr.Textbox(label="用户 ID", placeholder="用于多轮上下文的唯一标识")
-            rag_query = gr.Textbox(label="提问", placeholder="例如：重疾险甲状腺结节核保规则")
+            rag_token = gr.Textbox(
+                label="Token（条款功能需登录后填写）",
+                type="password",
+                placeholder="在认证 Tab 登录后，从返回结果复制 token 到此",
+            )
+            rag_user_id = gr.Textbox(
+                label="用户 ID",
+                placeholder="用于多轮上下文；条款功能请填与登录名一致",
+            )
+            rag_session_id = gr.State(value="")
+
+            with gr.Row():
+                rag_file = gr.File(label="上传条款", file_types=[".pdf", ".doc", ".docx", ".txt"])
+                rag_upload_btn = gr.Button("📎 上传条款", variant="secondary")
+            rag_clause_status = gr.Textbox(
+                label="条款状态",
+                value="",
+                interactive=False,
+                visible=True,
+            )
+            rag_clear_btn = gr.Button("清除条款", variant="secondary")
+            rag_query = gr.Textbox(label="提问", placeholder="例如：免赔额怎么算、等待期多久")
             rag_btn = gr.Button("发送", variant="primary")
             rag_answer = gr.Markdown(label="答案")
             rag_meta = gr.Textbox(label="溯源与轮数", lines=3)
+
+            def do_upload(file, token, session_id):
+                msg, sid, fn = _upload_clause(file, token, session_id or "")
+                if fn:
+                    status = f"📄 已加载：{fn}"
+                else:
+                    status = msg if "已加载" not in msg else msg
+                return msg, sid or _gen_session_id(), status
+
+            def do_clear(token, session_id):
+                msg, sid = _clear_clause(token, session_id)
+                return msg, sid, ""
+
+            rag_upload_btn.click(
+                fn=do_upload,
+                inputs=[rag_file, rag_token, rag_session_id],
+                outputs=[rag_meta, rag_session_id, rag_clause_status],
+            )
+            rag_clear_btn.click(
+                fn=do_clear,
+                inputs=[rag_token, rag_session_id],
+                outputs=[rag_meta, rag_session_id, rag_clause_status],
+            )
             rag_btn.click(
                 fn=_chat_rag,
-                inputs=[rag_user_id, rag_query],
+                inputs=[rag_user_id, rag_query, rag_token, rag_session_id],
                 outputs=[rag_answer, rag_meta],
             )
 
-        # 直接对话大模型区域
         with gr.Column(visible=False) as col_llm:
             gr.Markdown("**直接对话大模型**：不经过知识库检索，由大模型直接回答（需配置 OPENAI_API_KEY）。")
             llm_chatbot = gr.Chatbot(label="对话历史")

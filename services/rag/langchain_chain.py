@@ -173,7 +173,11 @@ def run_chat_with_langchain(
         for d in docs
     ]
     save_conversation_context(user_id, query, answer)
-    save_interaction_log(db, user_id, query, answer, source_count=len(docs))
+    save_interaction_log(
+        db, user_id, query, answer,
+        source_count=len(docs),
+        intent=intent_result.get("intent", "other"),
+    )
 
     out = {
         "answer": answer,

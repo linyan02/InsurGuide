@@ -4,6 +4,7 @@
 流式接口 POST /api/chat/stream 使用本模块，不依赖 USE_LANGCHAIN_RAG。
 """
 import asyncio
+import json
 import queue
 import threading
 from typing import Any, AsyncGenerator, Dict, Generator, Optional
@@ -14,6 +15,7 @@ from core.redis_store import get_conversation_context, save_conversation_context
 
 from config import settings
 from app.intent import (
+    INTENT_CLAUSE_PARSE,
     INTENT_COVERAGE_OVERLAP,
     INTENT_MEDICAL_INSURANCE,
     get_intent_label_cn,
@@ -28,6 +30,7 @@ from app.ragflow_client import (
     enhance_query_for_intent,
     get_coverage_kb_ids,
 )
+from app.clause_context import get_clause_context
 from app.answer_engine import (
     generate_answer_stream,
     enrich_answer_with_rich_content,
@@ -75,7 +78,7 @@ async def _stream_chunks_realtime(
 
 def _yield_done_event(out: Dict[str, Any]) -> Dict[str, Any]:
     """组装 done 事件结构，供前端消费。"""
-    return {
+    evt = {
         "type": "done",
         "answer": out.get("answer", ""),
         "source": out.get("sources", []),
@@ -87,6 +90,9 @@ def _yield_done_event(out: Dict[str, Any]) -> Dict[str, Any]:
         "intent_confidence": out.get("intent_confidence", 0),
         "rewritten_query": out.get("rewritten_query", ""),
     }
+    if "clause_loaded" in out:
+        evt["clause_loaded"] = out["clause_loaded"]
+    return evt
 
 
 async def run_chat_pipeline_stream(
@@ -97,6 +103,8 @@ async def run_chat_pipeline_stream(
     intent_mode: Optional[str] = None,
     rewrite_mode: Optional[str] = None,
     model_plan: Optional[str] = None,
+    session_id: Optional[str] = None,
+    clause_text: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     流式版 Pipeline：与 run_chat_pipeline 逻辑一致，
@@ -201,6 +209,8 @@ async def run_chat_pipeline_stream(
         save_interaction_log(
             db, user_id, query, answer,
             source_count=len(ragflow_result.get("documents") or []),
+            intent=intent_name,
+            session_id=session_id,
         )
         out = _yield_done_event({
             "answer": answer,
@@ -212,6 +222,121 @@ async def run_chat_pipeline_stream(
             "intent_cn": intent_result.get("intent_cn"),
             "intent_confidence": intent_result.get("confidence", 0),
             "rewritten_query": rewrite_result.get("rewritten_query", query),
+        })
+        yield out
+        return
+
+    # ---------- 医疗条款解析 ----------
+    elif intent_name == INTENT_CLAUSE_PARSE and getattr(
+        settings, "CLAUSE_PARSE_ENABLED", True
+    ):
+        from app.clause_context import save_clause_context as _save_clause
+
+        clause_ctx = get_clause_context(user_id, session_id or "default")
+        effective_clause_text = clause_text or ""
+        if clause_text and len(clause_text.strip()) > 100:
+            _save_clause(
+                user_id, session_id or "default", "text",
+                text_preview=clause_text[:500], text_full=clause_text,
+            )
+            clause_ctx = get_clause_context(user_id, session_id or "default")
+        elif clause_ctx and clause_ctx.get("source") == "text":
+            effective_clause_text = clause_ctx.get("text_full") or ""
+        if not clause_ctx and not effective_clause_text.strip():
+            guide_q = "要准确解读条款，请先粘贴相关条款内容，或上传条款文件（PDF/Word/TXT）。"
+            save_conversation_context(user_id, query, guide_q)
+            yield _yield_done_event({
+                "answer": guide_q,
+                "sources": [],
+                "context_count": len(context) + 1,
+                "violated": False,
+                "state": STATE_GUIDING,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "rewritten_query": query,
+                "clause_loaded": False,
+            })
+            return
+        rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
+        search_query = rewrite_result["rewritten_query"]
+        default_kb = getattr(settings, "RAGFLOW_KNOWLEDGE_BASE_ID", None)
+        kb_ids: list = []
+        if clause_ctx and clause_ctx.get("dataset_id"):
+            kb_ids.append(clause_ctx["dataset_id"])
+        if default_kb and default_kb not in kb_ids:
+            kb_ids.append(default_kb)
+        if not kb_ids:
+            kb_ids = [default_kb] if default_kb else None
+        ragflow_result = call_ragflow(
+            search_query,
+            knowledge_base_id=kb_ids if kb_ids else None,
+            top_k=getattr(settings, "RAGFLOW_TOP_K", 3),
+        )
+        if "error" in ragflow_result:
+            yield {"type": "error", "message": ragflow_result["error"]}
+            return
+        compressed = compress_context(
+            query,
+            context,
+            rewritten_query=rewrite_result.get("rewritten_query"),
+        )
+        dashscope_model = get_dashscope_model_for_plan(model_plan)
+        stream_gen = generate_answer_stream(
+            query,
+            ragflow_result,
+            compressed,
+            model=dashscope_model,
+            intent_name=INTENT_CLAUSE_PARSE,
+            clause_text=effective_clause_text.strip() or None,
+            clause_context=clause_ctx,
+        )
+        chunks_list: list = []
+        async for event in _stream_chunks_realtime(stream_gen, chunks_list):
+            yield event
+
+        answer = "".join(chunks_list)
+        if len(context) <= 1 and effective_clause_text and len(effective_clause_text.strip()) > 50:
+            from app.answer_engine import extract_clause_structured, _format_clause_structured_table
+            extracted = extract_clause_structured(
+                effective_clause_text.strip(), model=dashscope_model
+            )
+            if extracted:
+                answer = answer.rstrip() + _format_clause_structured_table(extracted)
+        answer = enrich_answer_with_rich_content(answer, ragflow_result)
+        answer, violated = check_and_mask(answer)
+        if violated:
+            save_compliance_log(db, user_id, query, answer, violated=True, remark="违规表述屏蔽")
+        metadatas = ragflow_result.get("metadatas") or []
+        sources = [m.get("source", m.get("document_name", "未知")) for m in metadatas]
+        save_conversation_context(user_id, query, answer)
+        snap = None
+        if clause_ctx:
+            try:
+                snap_copy = dict(clause_ctx)
+                if snap_copy.get("text_full") and len(str(snap_copy["text_full"])) > 16384:
+                    snap_copy["text_full"] = str(snap_copy["text_full"])[:16384] + "…"
+                snap = json.dumps(snap_copy, ensure_ascii=False)
+            except (TypeError, ValueError):
+                snap = None
+        save_interaction_log(
+            db, user_id, query, answer,
+            source_count=len(ragflow_result.get("documents") or []),
+            intent=intent_name,
+            session_id=session_id or "default",
+            clause_snapshot=snap,
+        )
+        out = _yield_done_event({
+            "answer": answer,
+            "sources": sources,
+            "context_count": len(context) + 1,
+            "violated": violated,
+            "state": STATE_COMPLETE,
+            "intent": intent_name,
+            "intent_cn": intent_result.get("intent_cn"),
+            "intent_confidence": intent_result.get("confidence", 0),
+            "rewritten_query": rewrite_result.get("rewritten_query", query),
+            "clause_loaded": bool(clause_ctx),
         })
         yield out
         return
@@ -249,6 +374,8 @@ async def run_chat_pipeline_stream(
     save_interaction_log(
         db, user_id, query, answer,
         source_count=len(ragflow_result.get("documents") or []),
+        intent=intent_result.get("intent", "other"),
+        session_id=session_id,
     )
     out = _yield_done_event({
         "answer": answer,

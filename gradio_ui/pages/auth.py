@@ -18,7 +18,9 @@ def _login(username: str, password: str) -> str:
         )
         if r.status_code == 200:
             token = r.json().get("access_token", "")
-            return f"登录成功！Token: {token[:20]}..." if token else "登录成功，但未返回 Token"
+            if token:
+                return f"登录成功！请复制下方 Token 到「对话服务」Tab 的 Token 输入框以使用条款功能：\n\n{token}"
+            return "登录成功，但未返回 Token"
         return f"登录失败: {r.json().get('detail', '未知错误')}"
     except Exception as e:
         return f"登录错误: {str(e)}"

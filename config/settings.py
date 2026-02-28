@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     COVERAGE_OVERLAP_QUERY_ENHANCE: bool = True     # 是否启用 query 增强
     COVERAGE_OVERLAP_KEYWORD: bool = True            # RAGflow 是否启用 keyword 匹配
 
+    # ---------- 医疗条款解析与咨询 ----------
+    CLAUSE_PARSE_ENABLED: bool = True
+    CLAUSE_UPLOAD_MAX_SIZE: int = 10 * 1024 * 1024   # 10MB
+    CLAUSE_ALLOWED_EXT: str = "pdf,doc,docx,txt"
+    CLAUSE_KB_CHUNK_METHOD: str = "naive"            # naive | laws | book
+
     # ---------- 对话上下文压缩 ----------
     CONTEXT_COMPRESSION_ENABLED: bool = True
     CONTEXT_SELECTION_MODE: str = "hybrid"  # recent_only | similarity | hybrid

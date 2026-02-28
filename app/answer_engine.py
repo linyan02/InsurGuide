@@ -92,6 +92,80 @@ COVERAGE_OVERLAP_PROMPT_TEMPLATE = """你是保障分析专家。基于检索到
 """
 
 
+# 医疗条款解析专用 Prompt 模板
+CLAUSE_PARSE_PROMPT_TEMPLATE = """你是专业的保险条款解读顾问。请基于以下知识库内容与用户提供的条款，回答用户问题。
+
+## 输出要求（必须 Markdown）
+1. **## 智保灵犀·条款解读**
+2. **您的问题：** 简要复述
+3. **条款依据：** 若知识库中有相关原文，请用引用块标注
+4. **解读：** 结构化、易懂的解读
+5. 结尾附：本解读仅供参考，不构成法律或投保建议，具体以保险合同条款为准。
+
+## 知识库内容
+{knowledge_content}
+
+## 用户提供的条款（如有）
+{clause_text}
+
+## 用户问题
+{query}
+"""
+
+
+CLAUSE_EXTRACT_PROMPT = """请从以下保险条款内容中抽取以下关键要素，以 JSON 返回。若某要素未在条款中明确提及，该字段填 null。
+
+要素：
+- deductible: 免赔额（如「1万元/年」，简洁表述）
+- waiting_period: 等待期（如「30天」）
+- renewal: 续保条件（如「非保证续保」「保证续保20年」）
+- exclusions: 责任免除要点（2-3 条，每条不超过 30 字，用分号分隔）
+
+条款内容：
+{clause_content}
+
+仅输出 JSON，不要其他说明。格式示例：{"deductible":"1万元/年","waiting_period":"30天","renewal":"非保证续保","exclusions":"既往症；故意行为"}"""
+
+
+def extract_clause_structured(clause_content: str, model: Optional[str] = None) -> Dict[str, Optional[str]]:
+    """从条款文本中抽取关键要素。若抽取失败返回空 dict。LLM 超时/网络异常时静默返回 {}，不打断主流程。"""
+    if not clause_content or len(clause_content.strip()) < 50:
+        return {}
+    content = clause_content[:8000] if len(clause_content) > 8000 else clause_content
+    prompt = CLAUSE_EXTRACT_PROMPT.format(clause_content=content)
+    try:
+        raw = call_light_llm(prompt, model=model)
+        if not raw or "{" not in raw:
+            return {}
+        start = raw.index("{")
+        end = raw.rindex("}") + 1
+        obj = json.loads(raw[start:end])
+        return {
+            "deductible": obj.get("deductible"),
+            "waiting_period": obj.get("waiting_period"),
+            "renewal": obj.get("renewal"),
+            "exclusions": obj.get("exclusions"),
+        }
+    except (json.JSONDecodeError, ValueError, Exception):
+        return {}
+
+
+def _format_clause_structured_table(extracted: Dict[str, Optional[str]]) -> str:
+    """将抽取结果格式化为 Markdown 表格。"""
+    d = extracted.get("deductible") or "未在条款中明确"
+    w = extracted.get("waiting_period") or "未在条款中明确"
+    r = extracted.get("renewal") or "未在条款中明确"
+    e = extracted.get("exclusions") or "未在条款中明确"
+    return """
+---
+## 关键要素速览
+
+| 免赔额 | 等待期 | 续保条件 | 责任免除要点 |
+| --- | --- | --- | --- |
+| {deductible} | {waiting_period} | {renewal} | {exclusions} |
+""".format(deductible=d, waiting_period=w, renewal=r, exclusions=e)
+
+
 def build_knowledge_content(ragflow_result: Dict[str, Any]) -> str:
     """从 RAGflow 返回结果整理成一段带来源的文本，供 Prompt 里的「知识库内容」使用。"""
     documents = ragflow_result.get("documents") or []
@@ -148,6 +222,9 @@ def generate_answer(
     intent_name: Optional[str] = None,
     coverage_slots: Optional[Dict[str, Any]] = None,
     analysis_result: Optional[Dict[str, Any]] = None,
+    clause_text: Optional[str] = None,
+    clause_context: Optional[Dict[str, Any]] = None,
+    context_count: int = 0,
 ) -> str:
     """
     结合 RAGflow 检索结果与历史上下文生成答案。do_compliance=True 时会调用合规检测并替换违规词。
@@ -172,6 +249,13 @@ def generate_answer(
             query=query,
             recommendation=recommendation,
         )
+    elif intent_name == "clause_parse":
+        clause_str = clause_text or "（未提供，仅依据知识库）"
+        prompt = CLAUSE_PARSE_PROMPT_TEMPLATE.format(
+            knowledge_content=knowledge_content,
+            clause_text=clause_str,
+            query=query,
+        )
     else:
         template = (
             INSURANCE_OPINION_PROMPT_TEMPLATE
@@ -184,6 +268,10 @@ def generate_answer(
             query=query,
         )
     answer = call_light_llm(prompt, model=model)
+    if intent_name == "clause_parse" and context_count <= 1 and clause_text and len(clause_text.strip()) > 50:
+        extracted = extract_clause_structured(clause_text, model=model)
+        if extracted:
+            answer = answer.rstrip() + _format_clause_structured_table(extracted)
     if do_compliance:
         answer, _ = check_and_mask(answer)
     answer = enrich_answer_with_rich_content(answer, ragflow_result)
@@ -356,6 +444,8 @@ def generate_answer_stream(
     intent_name: Optional[str] = None,
     coverage_slots: Optional[Dict[str, Any]] = None,
     analysis_result: Optional[Dict[str, Any]] = None,
+    clause_text: Optional[str] = None,
+    clause_context: Optional[Dict[str, Any]] = None,
 ):
     """
     流式生成答案，yield 每个文本片段。
@@ -378,6 +468,13 @@ def generate_answer_stream(
             pending_insurance=pending,
             query=query,
             recommendation=recommendation,
+        )
+    elif intent_name == "clause_parse":
+        clause_str = clause_text or "（未提供，仅依据知识库）"
+        prompt = CLAUSE_PARSE_PROMPT_TEMPLATE.format(
+            knowledge_content=knowledge_content,
+            clause_text=clause_str,
+            query=query,
         )
     else:
         template = (

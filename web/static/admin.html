@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智保灵犀 - 管理看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --insur-bg: #eef2f7;
+            --insur-card: #ffffff;
+            --insur-nav: #1e3a5f;
+            --insur-accent: #2563eb;
+            --insur-text: #1e293b;
+            --insur-muted: #64748b;
+        }
+        body { background: linear-gradient(135deg, #eef2f7 0%, #e2e8f0 100%) !important; min-height: 100vh; }
+        .card { background: var(--insur-card); border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(30, 58, 95, 0.06); }
+        .card:hover { box-shadow: 0 4px 12px rgba(30, 58, 95, 0.1); }
+        .admin-header { background: linear-gradient(90deg, #1e3a5f 0%, #0f2744 100%); padding: 1rem 1.5rem; border-radius: 0 0 16px 16px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans text-[var(--insur-text)]">
+    <div id="app" class="max-w-5xl mx-auto px-4 py-6">
+        <header class="admin-header flex items-center justify-between mb-8 -mx-4 px-6 rounded-b-2xl">
+            <h1 class="text-xl font-bold text-white">智保灵犀 - 管理看板</h1>
+            <div class="flex items-center gap-4">
+                <span id="data-range" class="text-sm text-blue-100">数据范围：近 7 天</span>
+                <a href="/static/index.html" class="text-blue-200 hover:text-white text-sm font-medium transition">返回首页</a>
+                <button id="btn-logout" class="px-4 py-2 text-sm rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/30 transition">退出</button>
+            </div>
+        </header>
+
+        <div id="need-login" class="hidden text-center py-16">
+            <p class="text-[var(--insur-muted)] mb-4">请先登录后查看管理看板</p>
+            <a href="/static/index.html" class="text-[var(--insur-accent)] hover:underline font-medium">去登录</a>
+        </div>
+
+        <div id="dashboard" class="space-y-6">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="card rounded-xl p-5 transition-shadow">
+                    <p class="text-sm text-[var(--insur-muted)] mb-1">交互总量</p>
+                    <p id="total-interactions" class="text-2xl font-bold text-[var(--insur-text)]">-</p>
+                </div>
+                <div class="card rounded-xl p-5 transition-shadow">
+                    <p class="text-sm text-[var(--insur-muted)] mb-1">合规拦截</p>
+                    <p id="compliance-violations" class="text-2xl font-bold text-amber-600">-</p>
+                </div>
+                <div class="card rounded-xl p-5 transition-shadow">
+                    <p class="text-sm text-[var(--insur-muted)] mb-1">条款解析</p>
+                    <p id="clause-parse-count" class="text-2xl font-bold text-[var(--insur-accent)]">-</p>
+                </div>
+                <div class="card rounded-xl p-5 transition-shadow">
+                    <p class="text-sm text-[var(--insur-muted)] mb-1">活跃用户</p>
+                    <p id="active-users" class="text-2xl font-bold text-emerald-600">-</p>
+                </div>
+            </div>
+
+            <div class="card rounded-xl p-6 transition-shadow">
+                <h2 class="text-lg font-semibold text-[var(--insur-text)] mb-4">意图分布</h2>
+                <div id="intent-distribution" class="flex flex-wrap gap-3">
+                    <span class="text-[var(--insur-muted)]">加载中...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-msg" class="hidden text-center py-8 text-red-600"></div>
+    </div>
+
+    <script>
+        (function () {
+            const API_BASE = (function () {
+                var o = window.location.origin || '';
+                if (!o || o === 'null' || o === 'file://') return 'http://localhost:8000';
+                return o.replace(/\/$/, '');
+            })();
+            const TOKEN_KEY = 'insurguide_token';
+
+            function getToken() {
+                try {
+                    return localStorage.getItem(TOKEN_KEY) || '';
+                } catch (_) { return ''; }
+            }
+
+            function logout() {
+                localStorage.removeItem(TOKEN_KEY);
+                window.location.href = '/static/index.html';
+            }
+
+            function fmt(n) {
+                return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+            }
+
+            document.getElementById('btn-logout').addEventListener('click', logout);
+
+            async function loadDashboard() {
+                const token = getToken();
+                if (!token) {
+                    document.getElementById('need-login').classList.remove('hidden');
+                    document.getElementById('dashboard').classList.add('hidden');
+                    return;
+                }
+
+                document.getElementById('need-login').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('error-msg').classList.add('hidden');
+
+                const days = 7;
+                const url = API_BASE + '/api/admin/dashboard?days=' + days;
+                const r = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (r.status === 401) {
+                    document.getElementById('need-login').classList.remove('hidden');
+                    document.getElementById('dashboard').classList.add('hidden');
+                    return;
+                }
+
+                if (!r.ok) {
+                    document.getElementById('error-msg').textContent = '加载失败：' + r.status;
+                    document.getElementById('error-msg').classList.remove('hidden');
+                    return;
+                }
+
+                const json = await r.json();
+                if (json.code !== 200 || !json.data) {
+                    document.getElementById('error-msg').textContent = json.message || '加载失败';
+                    document.getElementById('error-msg').classList.remove('hidden');
+                    return;
+                }
+
+                const d = json.data;
+                document.getElementById('data-range').textContent = '数据范围：近 ' + (d.days || 7) + ' 天';
+                document.getElementById('total-interactions').textContent = fmt(d.total_interactions ?? 0);
+                document.getElementById('compliance-violations').textContent = fmt(d.compliance_violations ?? 0);
+                document.getElementById('clause-parse-count').textContent = fmt(d.clause_parse_count ?? 0);
+                document.getElementById('active-users').textContent = fmt(d.active_users ?? 0);
+
+                const total = d.total_interactions || 0;
+                const dist = d.intent_distribution || [];
+                const html = dist.map(function (x) {
+                    var pct = total > 0 ? ((x.count / total) * 100).toFixed(1) : 0;
+                    return '<span class="inline-flex items-center px-3 py-1.5 rounded-full text-sm bg-[#e0e7ff] text-[#3730a3] border border-[#c7d2fe]/50">' +
+                        (x.intent_cn || x.intent) + ' ' + pct + '% (' + x.count + ')</span>';
+                }).join('');
+                document.getElementById('intent-distribution').innerHTML = html || '<span class="text-[var(--insur-muted)]">暂无数据</span>';
+            }
+
+            loadDashboard();
+        })();
+    </script>
+</body>
+</html>

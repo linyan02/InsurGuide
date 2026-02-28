@@ -24,6 +24,7 @@ def save_interaction_log(
     query: str,
     answer: str,
     source_count: int = 0,
+    intent: Optional[str] = None,
 ) -> None:
     """把本轮问答写入 MySQL 的交互日志表，用于统计与审计。"""
     try:
@@ -32,6 +33,7 @@ def save_interaction_log(
             query=query,
             answer=answer,
             source_count=source_count,
+            intent=intent,
         )
         db.add(log)
         db.commit()
@@ -129,7 +131,9 @@ def chat_once(
     # 6. 把本轮问答写入 Redis 上下文，并写交互日志
     save_conversation_context(user_id, query, answer)
     save_interaction_log(
-        db, user_id, query, answer, source_count=len(ragflow_result.get("documents") or [])
+        db, user_id, query, answer,
+        source_count=len(ragflow_result.get("documents") or []),
+        intent=intent_result.get("intent", "other"),
     )
     out = {
         "answer": answer,

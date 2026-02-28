@@ -11,7 +11,7 @@ import os
 
 from config import settings
 from core.database import Base, engine, get_db
-from routers import auth, vector, es, chat, intent_rewrite_rules
+from routers import auth, vector, es, chat, intent_rewrite_rules, clause, admin
 import models.chat_log  # 引入以注册 ORM 表，便于 create_all 建表
 
 Base.metadata.create_all(bind=engine)
@@ -36,6 +36,8 @@ app.include_router(vector.router)
 app.include_router(es.router)
 app.include_router(chat.router)
 app.include_router(intent_rewrite_rules.router)
+app.include_router(clause.router)
+app.include_router(admin.router)
 
 # 若存在 web/static 目录，则挂载为 /static，前端可访问 /static/index.html
 web_static = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "static")
@@ -51,6 +53,7 @@ def root():
         "version": settings.APP_VERSION,
         "docs": "/docs",
         "web": "/static/index.html" if os.path.isdir(web_static) else None,
+        "admin": "/static/admin.html" if os.path.isdir(web_static) else None,
     }
 
 

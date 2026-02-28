@@ -18,6 +18,9 @@ class InteractionLog(Base):
     query = Column(Text, nullable=False)
     answer = Column(Text, nullable=True)
     source_count = Column(Integer, default=0)  # 本回答引用了多少条知识库片段
+    intent = Column(String(64), nullable=True)  # 意图标签，用于统计与看板
+    session_id = Column(String(64), nullable=True)  # 会话 ID，用于恢复时绑定 clause_ctx
+    clause_snapshot = Column(Text, nullable=True)  # P2-11：条款上下文 JSON 快照，恢复历史时用
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

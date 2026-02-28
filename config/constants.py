@@ -47,3 +47,8 @@ GRADIO_ROUTE_VECTOR_ADD = "/api/vector/add"
 GRADIO_ROUTE_ES_SEARCH = "/api/es/search"
 GRADIO_ROUTE_ES_INDEX = "/api/es/index"
 GRADIO_ROUTE_ES_HEALTH = "/api/es/health"
+# P2-10 条款解析
+GRADIO_ROUTE_CLAUSE_UPLOAD = "/api/clause/upload"
+GRADIO_ROUTE_CLAUSE_CONTEXT = "/api/clause/context"
+GRADIO_ROUTE_CLAUSE_CLEAR = "/api/clause/clear"
+GRADIO_ROUTE_CHAT_STREAM = "/api/chat/stream"

@@ -6,6 +6,7 @@
 可在此处改为：recall → fusion → rerank → 再交给 answer_engine 生成答案。
 """
 # 从 typing 模块导入类型注解，用于声明函数参数和返回值的类型，便于阅读和 IDE 提示
+import json
 from typing import Any, Dict, List, Optional
 
 # 从 SQLAlchemy 导入 Session：表示一次数据库会话，在本文件中用于写入交互日志和合规日志
@@ -22,6 +23,7 @@ from models.chat_log import ComplianceLog, InteractionLog
 # 意图、改写、RAGflow、答案生成、合规均复用 app 层实现，保证与 chat_once 一致
 from config import settings
 from app.intent import (
+    INTENT_CLAUSE_PARSE,
     INTENT_COVERAGE_OVERLAP,
     INTENT_MEDICAL_INSURANCE,
     get_intent_label_cn,
@@ -36,6 +38,7 @@ from app.ragflow_client import (
     enhance_query_for_intent,
     get_coverage_kb_ids,
 )
+from app.clause_context import get_clause_context
 from app.answer_engine import generate_answer
 from app.context_compressor import compress_context
 from app.compliance import check_and_mask
@@ -52,15 +55,20 @@ def save_interaction_log(
     query: str,
     answer: str,
     source_count: int = 0,
+    intent: Optional[str] = None,
+    session_id: Optional[str] = None,
+    clause_snapshot: Optional[str] = None,
 ) -> None:
-    """将本轮问答写入交互日志表。"""
+    """将本轮问答写入交互日志表。clause_snapshot 为 clause_ctx 的 JSON 串，用于 P2-11 历史恢复。"""
     try:
-        # 用传入的参数构造一条 InteractionLog 记录（对应 interaction_logs 表的一行）
         log = InteractionLog(
             user_id=user_id,
             query=query,
             answer=answer,
             source_count=source_count,
+            intent=intent,
+            session_id=session_id,
+            clause_snapshot=clause_snapshot,
         )
         # 把这条记录加入当前会话的“待提交”列表
         db.add(log)
@@ -108,6 +116,8 @@ def run_chat_pipeline(
     intent_mode: Optional[str] = None,
     rewrite_mode: Optional[str] = None,
     model_plan: Optional[str] = None,
+    session_id: Optional[str] = None,
+    clause_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     执行一轮增强 RAG 对话（与 chat_once 一致）：
@@ -225,6 +235,8 @@ def run_chat_pipeline(
         save_interaction_log(
             db, user_id, query, answer,
             source_count=len(ragflow_result.get("documents") or []),
+            intent=intent_name,
+            session_id=session_id,
         )
         return {
             "answer": answer,
@@ -239,6 +251,126 @@ def run_chat_pipeline(
             "rewritten_query": rewrite_result.get("rewritten_query", query),
             "rewrite_changed": rewrite_result.get("changed", False),
             "rewrite_method": rewrite_result.get("method", "none"),
+        }
+    elif intent_name == INTENT_CLAUSE_PARSE and getattr(
+        settings, "CLAUSE_PARSE_ENABLED", True
+    ):
+        from app.clause_context import save_clause_context as _save_clause
+
+        clause_ctx = get_clause_context(user_id, session_id or "default")
+        effective_clause_text = clause_text or ""
+        if clause_text and len(clause_text.strip()) > 100:
+            _save_clause(
+                user_id, session_id or "default", "text",
+                text_preview=clause_text[:500], text_full=clause_text,
+            )
+            clause_ctx = get_clause_context(user_id, session_id or "default")
+        elif clause_ctx and clause_ctx.get("source") == "text":
+            effective_clause_text = clause_ctx.get("text_full") or ""
+        if not clause_ctx and not effective_clause_text.strip():
+            guide_q = "要准确解读条款，请先粘贴相关条款内容，或上传条款文件（PDF/Word/TXT）。"
+            save_conversation_context(user_id, query, guide_q)
+            return {
+                "answer": guide_q,
+                "sources": [],
+                "context_count": len(context) + 1,
+                "violated": False,
+                "state": STATE_GUIDING,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "intent_method": intent_result.get("method", "rule"),
+                "rewritten_query": query,
+                "rewrite_changed": False,
+                "rewrite_method": "none",
+                "clause_loaded": False,
+            }
+        rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
+        search_query = rewrite_result["rewritten_query"]
+        default_kb = getattr(settings, "RAGFLOW_KNOWLEDGE_BASE_ID", None)
+        kb_ids: List[str] = []
+        if clause_ctx and clause_ctx.get("dataset_id"):
+            kb_ids.append(clause_ctx["dataset_id"])
+        if default_kb and default_kb not in kb_ids:
+            kb_ids.append(default_kb)
+        if not kb_ids:
+            kb_ids = [default_kb] if default_kb else None
+        ragflow_result = call_ragflow(
+            search_query,
+            knowledge_base_id=kb_ids if kb_ids else None,
+            top_k=getattr(settings, "RAGFLOW_TOP_K", 3),
+        )
+        if "error" in ragflow_result:
+            return {
+                "error": ragflow_result["error"],
+                "answer": None,
+                "sources": [],
+                "context_count": len(context),
+                "violated": False,
+                "state": STATE_COMPLETE,
+                "intent": intent_name,
+                "intent_cn": intent_result.get("intent_cn"),
+                "intent_confidence": intent_result.get("confidence", 0),
+                "intent_method": intent_result.get("method", "rule"),
+                "rewritten_query": rewrite_result.get("rewritten_query", query),
+                "rewrite_changed": rewrite_result.get("changed", False),
+                "rewrite_method": rewrite_result.get("method", "none"),
+                "clause_loaded": bool(clause_ctx),
+            }
+        compressed = compress_context(
+            query,
+            context,
+            rewritten_query=rewrite_result.get("rewritten_query"),
+        )
+        dashscope_model = get_dashscope_model_for_plan(model_plan)
+        answer = generate_answer(
+            query,
+            ragflow_result,
+            compressed,
+            do_compliance=False,
+            model=dashscope_model,
+            intent_name=INTENT_CLAUSE_PARSE,
+            clause_text=effective_clause_text if effective_clause_text.strip() else None,
+            clause_context=clause_ctx,
+            context_count=len(context),
+        )
+        answer, violated = check_and_mask(answer)
+        if violated:
+            save_compliance_log(db, user_id, query, answer, violated=True, remark="违规表述屏蔽")
+        metadatas = ragflow_result.get("metadatas") or []
+        sources = [m.get("source", m.get("document_name", "未知")) for m in metadatas]
+        save_conversation_context(user_id, query, answer)
+        # P2-11: 有条款时存 session_id 与 clause_snapshot，便于历史恢复
+        snap = None
+        if clause_ctx:
+            try:
+                snap_copy = dict(clause_ctx)
+                if snap_copy.get("text_full") and len(str(snap_copy["text_full"])) > 16384:
+                    snap_copy["text_full"] = str(snap_copy["text_full"])[:16384] + "…"
+                snap = json.dumps(snap_copy, ensure_ascii=False)
+            except (TypeError, ValueError):
+                snap = None
+        save_interaction_log(
+            db, user_id, query, answer,
+            source_count=len(ragflow_result.get("documents") or []),
+            intent=intent_name,
+            session_id=session_id or "default",
+            clause_snapshot=snap,
+        )
+        return {
+            "answer": answer,
+            "sources": sources,
+            "context_count": len(context) + 1,
+            "violated": violated,
+            "state": STATE_COMPLETE,
+            "intent": intent_name,
+            "intent_cn": intent_result.get("intent_cn"),
+            "intent_confidence": intent_result.get("confidence", 0),
+            "intent_method": intent_result.get("method", "rule"),
+            "rewritten_query": rewrite_result.get("rewritten_query", query),
+            "rewrite_changed": rewrite_result.get("changed", False),
+            "rewrite_method": rewrite_result.get("method", "none"),
+            "clause_loaded": bool(clause_ctx),
         }
     else:
         rewrite_result = rewrite_query(query, context, mode=rewrite_mode)
@@ -290,6 +422,8 @@ def run_chat_pipeline(
     save_interaction_log(
         db, user_id, query, answer,
         source_count=len(ragflow_result.get("documents") or []),
+        intent=intent_result.get("intent", "other"),
+        session_id=session_id,
     )
     # 组装成功时的返回结构，供路由层转成 API 响应
     out = {
