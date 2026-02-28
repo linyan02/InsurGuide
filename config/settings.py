@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # ---------- 大模型与合规 ----------
     LLM_MODE: str = "api"               # api=用云端接口，local=用本机模型
-    DASHSCOPE_API_KEY: Optional[str] = "sk-c164f51d9b0b4efb9f1ee529ee578ee4"   # 通义千问的 Key，用于生成答案/意图/改写
+    DASHSCOPE_API_KEY: Optional[str] = ""   # 通义千问的 Key，用于生成答案/意图/改写
     OPENAI_API_KEY: Optional[str] = None
     VIOLATION_WORDS: str = "保证赔付,100%理赔,无风险,稳赚,必赔"  # 答案里出现这些词会被替换成「已屏蔽」
 
