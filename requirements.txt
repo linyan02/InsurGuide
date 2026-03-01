@@ -20,9 +20,8 @@ sqlalchemy==2.0.23
 pymysql==1.1.0
 cryptography==41.0.7
 
-# 向量数据库相关 (支持多种向量数据库)
+# 向量数据库相关 (ChromaDB + 嵌入)
 chromadb==0.4.18
-faiss-cpu==1.8.0
 sentence-transformers==2.2.2
 
 # Elasticsearch 相关
@@ -37,14 +36,8 @@ python-dotenv==1.0.0
 # 增强 RAG：Redis 上下文、RAGflow 调用
 redis==5.0.1
 
-# 数据处理（百万医疗 Excel 等）
-pandas>=2.0.0
-openpyxl>=3.1.2
-python-calamine>=0.2.0  # 备用引擎，兼容 WPS/保通等含非标准样式的 xlsx
-
 # 其他工具
 httpx==0.25.2
-aiofiles==23.2.1
 
 # 测试
 pytest==7.4.3
