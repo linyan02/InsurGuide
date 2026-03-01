@@ -5,10 +5,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 系统依赖（ChromaDB/sentence-transformers 等需要 C++ 编译）
+# 系统依赖（ChromaDB/sentence-transformers 等需要 C++ 编译；仅装最小集以降低 1GB ECS OOM 风险）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+    gcc \
     g++ \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 # 依赖先复制并安装，便于利用镜像缓存

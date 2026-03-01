@@ -469,6 +469,7 @@ grep insurguide ~/.bashrc
 
 | 现象 | 处理 |
 |------|------|
+| `apt-get` 或 `pip install` 报错 **exit code 137** | 内存不足（OOM）。ECS 若为 1GB，请先添加 swap 再构建（见下方「内存不足时添加 swap」） |
 | `pip install` 报错 exit code 1 | Dockerfile 已使用阿里云 PyPI 镜像与 300 秒超时。若仍失败：1) 执行 `docker build --no-cache .` 查看完整报错；2) 确认 ECS 内存 ≥2GB；3) 检查磁盘空间 |
 | `docker: command not found` | 按第三步重新安装 Docker |
 | `git: command not found` | 执行 `yum install -y git` 或 `apt install -y git` |
@@ -477,6 +478,27 @@ grep insurguide ~/.bashrc
 | 外网无法访问 | 检查安全组是否放通 8000，防火墙是否开放 8000 |
 | MySQL 连接失败 | 确认 `MYSQL_HOST` 用 `172.17.0.1` 或 `host.docker.internal`，MySQL 监听 `0.0.0.0` |
 | Redis 连接失败 | 同上，检查 `REDIS_HOST` 和 Redis 监听地址 |
+
+### 内存不足时添加 swap（解决 exit code 137）
+
+若 ECS 为 1GB 内存，`docker build` 在 apt-get 或 pip 阶段可能因 OOM 被杀掉（exit code 137）。可临时增加 2GB swap：
+
+```bash
+# 创建 2GB swap 文件
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# 验证
+free -h
+
+# 然后重新构建
+cd /opt/InsurGuide
+docker build -t insurguide:latest .
+```
+
+若希望开机自动挂载 swap，可执行：`echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab`
 
 ---
 
