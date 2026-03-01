@@ -5,14 +5,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 系统依赖（ChromaDB/向量等可能用到）
+# 系统依赖（ChromaDB/sentence-transformers 等需要 C++ 编译）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # 依赖先复制并安装，便于利用镜像缓存
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 阿里云 ECS 使用阿里云 PyPI 镜像更稳定；增加超时防止 torch 等大包下载中断
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir --default-timeout=300 \
+    -r requirements.txt \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com
 
 # 应用代码
 COPY config/ ./config/

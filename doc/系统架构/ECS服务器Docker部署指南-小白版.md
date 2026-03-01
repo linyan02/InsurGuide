@@ -347,7 +347,7 @@ chmod +x scripts/deploy.sh
 
 | 阶段 | 耗时 | 说明 |
 |------|------|------|
-| 首次构建 | 5～15 分钟 | 需下载 Python 基础镜像、执行 apt-get、安装大量 Python 依赖（如 chromadb、faiss、sentence-transformers 等），耗时主要集中在 `pip install` |
+| 首次构建 | 5～15 分钟 | 需下载 Python 基础镜像、执行 apt-get、安装大量 Python 依赖（如 chromadb、sentence-transformers、torch 等），耗时主要集中在 `pip install` |
 | 仅代码更新后的构建 | 约 30 秒～2 分钟 | Docker 会利用**层缓存**：若 `requirements.txt` 未变，`pip install` 步骤会被跳过，只重新复制代码并生成新镜像 |
 
 **若每次更新都感觉像“全量重建”很慢**，常见原因：
@@ -469,6 +469,7 @@ grep insurguide ~/.bashrc
 
 | 现象 | 处理 |
 |------|------|
+| `pip install` 报错 exit code 1 | Dockerfile 已使用阿里云 PyPI 镜像与 300 秒超时。若仍失败：1) 执行 `docker build --no-cache .` 查看完整报错；2) 确认 ECS 内存 ≥2GB；3) 检查磁盘空间 |
 | `docker: command not found` | 按第三步重新安装 Docker |
 | `git: command not found` | 执行 `yum install -y git` 或 `apt install -y git` |
 | 容器启动后马上退出 | `docker logs insurguide` 查报错；常见为 MySQL/Redis 连不上 |
